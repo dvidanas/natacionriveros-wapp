@@ -1,0 +1,81 @@
+@import "tailwindcss";
+
+@theme {
+  --color-wa-bg-main: var(--bg-main);
+  --color-wa-panel-l: var(--bg-panel-l);
+  --color-wa-panel-r: var(--bg-panel-r);
+  --color-wa-bubble-in: var(--bg-bubble-in);
+  --color-wa-bubble-out: var(--bg-bubble-out);
+  --color-wa-input: var(--bg-input);
+  --color-wa-header: var(--bg-header);
+  --color-wa-text-main: var(--text-main);
+  --color-wa-text-sec: var(--text-sec);
+  --color-wa-green: var(--wa-green);
+  --color-wa-green-dark: var(--wa-green-d);
+  --color-wa-sep: var(--color-sep);
+  --color-wa-hover: var(--bg-hover);
+}
+
+:root {
+  --bg-main: #F0F5FB;
+  --bg-panel-l: #FFFFFF;
+  --bg-panel-r: #FFFFFF;
+  --bg-bubble-in: #EBF3FB;
+  --bg-bubble-out: #D6EEFA;
+  --bg-input: #FFFFFF;
+  --bg-header: #FFFFFF;
+  --text-main: #0D2E6E;
+  --text-sec: #5A7BA6;
+  --wa-green: #3AB4F2;
+  --wa-green-d: #1a8fd1;
+  --wa-green-text: #FFFFFF;
+  --color-sep: #D6E4F0;
+  --bg-hover: #EBF3FB;
+  --shadow-card: 0 1px 3px 0 rgba(13,46,110,0.07), 0 1px 2px -1px rgba(13,46,110,0.04);
+  --shadow-card-hover: 0 4px 6px -1px rgba(13,46,110,0.10), 0 2px 4px -2px rgba(13,46,110,0.06);
+}
+
+.dark {
+  --bg-main: #060E20;
+  --bg-panel-l: #0D1B35;
+  --bg-panel-r: #0D1B35;
+  --bg-bubble-in: #122040;
+  --bg-bubble-out: #0A3060;
+  --bg-input: #122040;
+  --bg-header: #0D1B35;
+  --text-main: #E8F1FA;
+  --text-sec: #7EA8C9;
+  --wa-green: #3AB4F2;
+  --wa-green-d: #1a8fd1;
+  --wa-green-text: #FFFFFF;
+  --color-sep: #122040;
+  --bg-hover: #122040;
+  --shadow-card: 0 1px 3px 0 rgba(0,0,0,0.5), 0 1px 2px -1px rgba(0,0,0,0.4);
+  --shadow-card-hover: 0 4px 6px -1px rgba(0,0,0,0.6), 0 2px 4px -2px rgba(0,0,0,0.5);
+}
+
+body {
+  background-color: var(--bg-main);
+  color: var(--text-main);
+  font-family: var(--font-sans), system-ui, sans-serif;
+  transition: background-color 0.2s, color 0.2s;
+  overflow: hidden;
+}
+
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.animate-in {
+  animation: fadeInUp 0.2s ease-out both;
+}
+
+@keyframes modalIn {
+  from { opacity: 0; transform: scale(0.97) translateY(6px); }
+  to   { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+.animate-modal {
+  animation: modalIn 0.15s ease-out both;
+}
