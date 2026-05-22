@@ -15,6 +15,7 @@ interface Service {
   capacity: number;
   enrolled: number;
   active: number;
+  resource_names: string | null;
 }
 
 interface Promotion {
@@ -307,7 +308,10 @@ export default function ServicesPage() {
                     <div className={`w-2 h-2 rounded-full flex-shrink-0 ${s.active ? "bg-[var(--color-wa-green)]" : "bg-[var(--color-wa-sep)]"}`} />
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-medium text-[var(--color-wa-text-main)] truncate">{s.name}</p>
-                      <p className="text-xs text-[var(--color-wa-text-sec)] truncate">{s.teacher ? `${s.teacher}` : ""}{s.price ? ` · ${s.price}/mes` : ""}</p>
+                      <p className="text-xs text-[var(--color-wa-text-sec)] truncate">
+                        {(s.resource_names || s.teacher) ? `${s.resource_names || s.teacher}` : ""}
+                        {s.price ? ` · ${s.price}/mes` : ""}
+                      </p>
                       <p className={`text-xs font-semibold mt-0.5 ${s.enrolled >= (s.capacity ?? 10) ? "text-red-500" : "text-[var(--color-wa-green)]"}`}>
                         {s.enrolled >= (s.capacity ?? 10) ? "Cupo lleno" : `${s.enrolled}/${s.capacity ?? 10} inscriptos`}
                       </p>

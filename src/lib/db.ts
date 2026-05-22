@@ -806,6 +806,7 @@ export interface Service {
 
 export interface ServiceWithEnrollment extends Service {
   enrolled: number;
+  resource_names: string | null;
 }
 
 export function listServices(includeInactive = false): Service[] {
@@ -820,7 +821,11 @@ export function listServicesWithEnrollment(includeInactive = false): ServiceWith
   return getDb()
     .prepare<[], ServiceWithEnrollment>(
       `SELECT s.*,
-        (SELECT COUNT(*) FROM appointments WHERE service = s.name AND status != 'cancelled') as enrolled
+        (SELECT COUNT(*) FROM appointments WHERE service = s.name AND status != 'cancelled') as enrolled,
+        (SELECT GROUP_CONCAT(r.name, ', ')
+         FROM resource_services rs
+         JOIN resources r ON r.id = rs.resource_id
+         WHERE rs.service_id = s.id AND r.active = 1) as resource_names
        FROM services s ${where} ORDER BY s.name ASC`
     )
     .all();
