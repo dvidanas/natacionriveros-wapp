@@ -105,7 +105,7 @@ function ServiceForm({
         </div>
         <div>
           <label className="block text-xs font-medium text-[var(--color-wa-text-sec)] mb-1">Horarios</label>
-          <input value={form.hours} onChange={(e) => setForm((p) => ({ ...p, hours: e.target.value }))} className={INPUT} placeholder="Ej: 08:00 – 09:00" />
+          <input value={form.hours} onChange={(e) => setForm((p) => ({ ...p, hours: e.target.value }))} className={INPUT} placeholder="Ej: 08:00 - 09:00" />
         </div>
         <div>
           <label className="block text-xs font-medium text-[var(--color-wa-text-sec)] mb-1">Cupo máximo</label>

@@ -305,7 +305,7 @@ export default function StaffPage() {
                             />
                           </>
                         ) : (
-                          <span className=”text-sm text-[var(--color-wa-text-sec)]”>{DAYS_FULL[i]} – sin atención</span>
+                          <span className=”text-sm text-[var(--color-wa-text-sec)]”>{DAYS_FULL[i]} - sin atención</span>
                         )}
                       </div>
                     );
