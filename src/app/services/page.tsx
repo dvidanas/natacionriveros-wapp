@@ -10,6 +10,8 @@ interface Service {
   price: string | null;
   duration_minutes: number;
   teacher: string | null;
+  capacity: number;
+  enrolled: number;
   active: number;
 }
 
@@ -39,7 +41,7 @@ const BTN_GHOST =
 
 // ── Service Form ──────────────────────────────────────────────────────────────
 
-const EMPTY_SVC = { name: "", description: "", price: "", duration_minutes: 60, teacher: "" };
+const EMPTY_SVC = { name: "", description: "", price: "", duration_minutes: 60, teacher: "", capacity: 10 };
 
 function ServiceForm({
   initial,
@@ -52,7 +54,7 @@ function ServiceForm({
 }) {
   const [form, setForm] = useState(
     initial
-      ? { name: initial.name, description: initial.description ?? "", price: initial.price ?? "", duration_minutes: initial.duration_minutes, teacher: initial.teacher ?? "" }
+      ? { name: initial.name, description: initial.description ?? "", price: initial.price ?? "", duration_minutes: initial.duration_minutes, teacher: initial.teacher ?? "", capacity: initial.capacity ?? 10 }
       : EMPTY_SVC
   );
   const [saving, setSaving] = useState(false);
@@ -98,6 +100,15 @@ function ServiceForm({
         <div>
           <label className="block text-sm font-medium text-[var(--color-wa-text-main)] mb-1">Duración de clase (min)</label>
           <input type="number" min={30} step={15} value={form.duration_minutes} onChange={(e) => setForm((p) => ({ ...p, duration_minutes: Number(e.target.value) }))} className={INPUT} />
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-[var(--color-wa-text-main)] mb-1">Cupo máximo</label>
+          <input type="number" min={1} step={1} value={form.capacity} onChange={(e) => setForm((p) => ({ ...p, capacity: Number(e.target.value) }))} className={INPUT} placeholder="10" />
+          {initial && (
+            <p className="text-xs text-[var(--color-wa-text-sec)] mt-1">
+              Inscriptos actuales: <span className={`font-semibold ${initial.enrolled >= initial.capacity ? "text-red-500" : "text-[var(--color-wa-green)]"}`}>{initial.enrolled}</span> / {initial.capacity ?? 10}
+            </p>
+          )}
         </div>
         <div className="sm:col-span-2">
           <label className="block text-sm font-medium text-[var(--color-wa-text-main)] mb-1">Descripción / Horarios</label>
@@ -287,6 +298,9 @@ export default function ServicesPage() {
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-medium text-[var(--color-wa-text-main)] truncate">{s.name}</p>
                       <p className="text-xs text-[var(--color-wa-text-sec)] truncate">{s.teacher ? `${s.teacher}` : ""}{s.price ? ` · ${s.price}/mes` : ""}</p>
+                      <p className={`text-xs font-semibold mt-0.5 ${s.enrolled >= (s.capacity ?? 10) ? "text-red-500" : "text-[var(--color-wa-green)]"}`}>
+                        {s.enrolled >= (s.capacity ?? 10) ? "Cupo lleno" : `${s.enrolled}/${s.capacity ?? 10} inscriptos`}
+                      </p>
                     </div>
                     <div className="flex gap-1 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
                       <button onClick={() => toggleService(s)} className="p-1 rounded hover:bg-[var(--color-wa-hover)] text-[var(--color-wa-text-sec)]" title={s.active ? "Desactivar" : "Activar"}>

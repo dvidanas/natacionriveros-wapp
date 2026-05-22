@@ -199,6 +199,10 @@ function migrate(db: Database.Database) {
     db.exec("ALTER TABLE availability_slots ADD COLUMN max_capacity INTEGER NOT NULL DEFAULT 20");
   } catch { /* ya existe */ }
 
+  try {
+    db.exec("ALTER TABLE services ADD COLUMN capacity INTEGER NOT NULL DEFAULT 10");
+  } catch { /* ya existe */ }
+
   db.exec(`
     CREATE TABLE IF NOT EXISTS promotions (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -777,8 +781,13 @@ export interface Service {
   price: string | null;
   duration_minutes: number;
   teacher: string | null;
+  capacity: number;
   active: number;
   created_at: number;
+}
+
+export interface ServiceWithEnrollment extends Service {
+  enrolled: number;
 }
 
 export function listServices(includeInactive = false): Service[] {
@@ -788,10 +797,39 @@ export function listServices(includeInactive = false): Service[] {
   return getDb().prepare<[], Service>(query).all();
 }
 
+export function listServicesWithEnrollment(includeInactive = false): ServiceWithEnrollment[] {
+  const where = includeInactive ? "" : "WHERE s.active = 1";
+  return getDb()
+    .prepare<[], ServiceWithEnrollment>(
+      `SELECT s.*,
+        (SELECT COUNT(*) FROM appointments WHERE service = s.name AND status != 'cancelled') as enrolled
+       FROM services s ${where} ORDER BY s.name ASC`
+    )
+    .all();
+}
+
+export function getEnrolledCountByServiceName(serviceName: string): number {
+  return (getDb()
+    .prepare<[string], { count: number }>(
+      "SELECT COUNT(*) as count FROM appointments WHERE service = ? AND status != 'cancelled'"
+    )
+    .get(serviceName))!.count;
+}
+
+export function hasEnrollmentForConversation(conversationId: number, serviceName: string): boolean {
+  return (
+    getDb()
+      .prepare<[number, string], { id: number }>(
+        "SELECT id FROM appointments WHERE conversation_id = ? AND service = ? AND status != 'cancelled' LIMIT 1"
+      )
+      .get(conversationId, serviceName) !== undefined
+  );
+}
+
 export function createService(data: Omit<Service, "id" | "created_at">): number {
   const res = getDb()
-    .prepare("INSERT INTO services (name, description, price, duration_minutes, teacher, active) VALUES (?, ?, ?, ?, ?, ?)")
-    .run(data.name, data.description ?? null, data.price ?? null, data.duration_minutes, data.teacher ?? null, data.active);
+    .prepare("INSERT INTO services (name, description, price, duration_minutes, teacher, active, capacity) VALUES (?, ?, ?, ?, ?, ?, ?)")
+    .run(data.name, data.description ?? null, data.price ?? null, data.duration_minutes, data.teacher ?? null, data.active, data.capacity ?? 10);
   return res.lastInsertRowid as number;
 }
 

@@ -14,6 +14,8 @@ import {
   getAvailableSlots,
   createAppointment,
   hasAppointmentForSlot,
+  listServicesWithEnrollment,
+  hasEnrollmentForConversation,
   type AvailableSlot,
 } from "@/lib/db";
 import { getChatCompletion, getRawCompletion, type ChatMessage } from "@/lib/gemini";
@@ -170,12 +172,17 @@ async function sendDebouncedReply(convoId: number, phone: string): Promise<void>
     console.error(`[wh] error al enviar a +${phone}:`, err);
   }
 
-  // Intentar detectar si el usuario confirmó un turno
+  // Intentar detectar si el usuario confirmó un turno (slot-based)
   if (apptConfig?.enabled && offeredSlots.length > 0) {
     tryBookAppointmentFromChat(convoId, phone, history, offeredSlots, apptConfig.defaultDuration ?? 30).catch(
       (err) => console.error("[appt] error en tryBookAppointmentFromChat:", err)
     );
   }
+
+  // Intentar detectar inscripción en disciplina de natación
+  tryEnrollStudentFromChat(convoId, phone, history, reply).catch(
+    (err) => console.error("[enroll] error en tryEnrollStudentFromChat:", err)
+  );
 }
 
 async function tryBookAppointmentFromChat(
@@ -258,6 +265,90 @@ null`;
   });
 
   console.log(`[appt] turno PENDIENTE creado id=${id} para +${phone} → ${date} ${time_start}`);
+}
+
+async function tryEnrollStudentFromChat(
+  convoId: number,
+  phone: string,
+  history: { role: string; content: string }[],
+  lastBotReply: string
+): Promise<void> {
+  // Solo actuar cuando el bot acaba de enviar datos de pago (señal de que llegó al Paso 4)
+  if (!lastBotReply.includes("NatacionRiveros") && !lastBotReply.includes("PENDIENTE")) return;
+
+  const services = listServicesWithEnrollment();
+  if (services.length === 0) return;
+
+  const serviceList = services.map((s) => `"${s.name}" (cupo: ${s.capacity - s.enrolled} disponibles)`).join(", ");
+  const conversation = history.slice(-10).map((m) =>
+    `${m.role === "user" ? "Usuario" : "Bot"}: ${m.content}`
+  ).join("\n");
+
+  const prompt = `Sos un extractor de datos. Analizá esta conversación de WhatsApp de un complejo de natación.
+
+Disciplinas disponibles: ${serviceList}
+
+Conversación:
+${conversation}
+
+Si el bot acaba de confirmar una inscripción PENDIENTE y el usuario proporcionó su nombre, respondé ÚNICAMENTE con este JSON (sin markdown):
+{"discipline":"nombre exacto de la disciplina de la lista","student_name":"nombre del alumno"}
+
+Si NO hay confirmación de inscripción con nombre de alumno, respondé ÚNICAMENTE con:
+null`;
+
+  let raw: string;
+  try {
+    raw = await getRawCompletion(prompt);
+  } catch (err) {
+    console.error("[enroll] error en extracción:", err);
+    return;
+  }
+
+  const clean = raw.trim().replace(/```json|```/g, "").trim();
+  if (clean === "null" || !clean.startsWith("{")) return;
+
+  let parsed: { discipline?: string; student_name?: string };
+  try {
+    parsed = JSON.parse(clean);
+  } catch {
+    return;
+  }
+
+  const { discipline, student_name } = parsed;
+  if (!discipline || !student_name) return;
+
+  // Verificar que la disciplina existe y tiene cupo
+  const svc = services.find((s) => s.name.toLowerCase() === discipline.toLowerCase());
+  if (!svc) {
+    console.log(`[enroll] disciplina "${discipline}" no encontrada en DB`);
+    return;
+  }
+  if (svc.enrolled >= svc.capacity) {
+    console.log(`[enroll] disciplina "${svc.name}" sin cupo (${svc.enrolled}/${svc.capacity})`);
+    return;
+  }
+
+  // Evitar duplicado para esta conversación + disciplina
+  if (hasEnrollmentForConversation(convoId, svc.name)) {
+    console.log(`[enroll] ya existe inscripción para conv ${convoId} en "${svc.name}"`);
+    return;
+  }
+
+  const today = new Date().toISOString().slice(0, 10);
+  const id = createAppointment({
+    resource_id: 1,
+    conversation_id: convoId,
+    service: svc.name,
+    date: today,
+    time_start: "00:00",
+    duration_minutes: svc.duration_minutes,
+    source: "bot",
+    contact_name: student_name,
+    contact_phone: phone,
+  });
+
+  console.log(`[enroll] inscripción PENDIENTE creada id=${id} — "${svc.name}" para ${student_name} (+${phone})`);
 }
 
 export async function processWebhookPayload(payload: unknown): Promise<void> {

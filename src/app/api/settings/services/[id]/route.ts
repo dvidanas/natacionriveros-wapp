@@ -12,6 +12,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
     ...(body.price !== undefined && { price: body.price?.trim() ?? null }),
     ...(body.duration_minutes !== undefined && { duration_minutes: Number(body.duration_minutes) }),
     ...(body.teacher !== undefined && { teacher: body.teacher?.trim() ?? null }),
+    ...(body.capacity !== undefined && { capacity: Number(body.capacity) }),
     ...(body.active !== undefined && { active: Number(body.active) }),
   });
   return NextResponse.json({ ok: true });

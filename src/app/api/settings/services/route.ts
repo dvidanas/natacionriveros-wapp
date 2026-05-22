@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
-import { listServices, createService } from "@/lib/db";
+import { listServicesWithEnrollment, createService } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
 export async function GET() {
   try {
-    return NextResponse.json(listServices(true));
+    return NextResponse.json(listServicesWithEnrollment(true));
   } catch (error: unknown) {
     const msg = error instanceof Error ? error.message : String(error);
     return Response.json({ error: msg }, { status: 500 });
@@ -21,6 +21,7 @@ export async function POST(req: Request) {
     price: body.price?.trim() ?? null,
     duration_minutes: Number(body.duration_minutes) || 60,
     teacher: body.teacher?.trim() ?? null,
+    capacity: Number(body.capacity) || 10,
     active: 1,
   });
   return NextResponse.json({ id });
