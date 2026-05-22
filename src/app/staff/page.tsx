@@ -10,6 +10,11 @@ interface Resource {
   active: number;
 }
 
+interface ServiceOption {
+  id: number;
+  name: string;
+}
+
 interface AvailabilitySlot {
   id: number;
   resource_id: number;
@@ -46,6 +51,11 @@ export default function StaffPage() {
   const [availability, setAvailability] = useState<AvailabilitySlot[]>([]);
   const [savingAvail, setSavingAvail] = useState(false);
 
+  // Disciplines (resource_services)
+  const [allServices, setAllServices] = useState<ServiceOption[]>([]);
+  const [assignedServiceIds, setAssignedServiceIds] = useState<Set<number>>(new Set());
+  const [savingServices, setSavingServices] = useState(false);
+
   // Delete confirmation
   const [deleteTarget, setDeleteTarget] = useState<Resource | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
@@ -53,11 +63,19 @@ export default function StaffPage() {
   const loadStaff = useCallback(() =>
     fetch("/api/settings/resources").then((r) => r.json()).then(setStaff), []);
 
-  useEffect(() => { loadStaff(); }, [loadStaff]);
+  useEffect(() => {
+    loadStaff();
+    fetch("/api/settings/services").then((r) => r.json()).then((svcs: ServiceOption[]) => setAllServices(svcs));
+  }, [loadStaff]);
 
   const loadAvailability = useCallback(async (id: number) => {
     const slots: AvailabilitySlot[] = await fetch(`/api/settings/resources/${id}`).then((r) => r.json());
     setAvailability(slots);
+  }, []);
+
+  const loadServicesForResource = useCallback(async (id: number) => {
+    const svcs: ServiceOption[] = await fetch(`/api/settings/resources/${id}/services`).then((r) => r.json());
+    setAssignedServiceIds(new Set(svcs.map((s) => s.id)));
   }, []);
 
   const selectStaff = (r: Resource) => {
@@ -66,6 +84,7 @@ export default function StaffPage() {
     setEditPhone(r.phone ?? "");
     setAddingNew(false);
     loadAvailability(r.id);
+    loadServicesForResource(r.id);
   };
 
   const createStaff = async () => {
@@ -149,6 +168,25 @@ export default function StaffPage() {
       body: JSON.stringify({ availability: availability.map(({ day_of_week, time_start, time_end }) => ({ day_of_week, time_start, time_end })) }),
     });
     setSavingAvail(false);
+  };
+
+  const toggleService = (id: number) => {
+    setAssignedServiceIds((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  };
+
+  const saveServices = async () => {
+    if (!selectedId) return;
+    setSavingServices(true);
+    await fetch(`/api/settings/resources/${selectedId}/services`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ service_ids: [...assignedServiceIds] }),
+    });
+    setSavingServices(false);
   };
 
   const selected = staff.find((r) => r.id === selectedId) ?? null;
@@ -268,6 +306,40 @@ export default function StaffPage() {
                 <div>
                   <button onClick={saveInfo} disabled={savingInfo || !editName.trim()} className={BTN_PRIMARY}>
                     {savingInfo ? "Guardando…" : "Guardar datos"}
+                  </button>
+                </div>
+              </div>
+
+              <div className="border-t border-[var(--color-wa-sep)]" />
+
+              {/* Disciplines */}
+              <div className="flex flex-col gap-4">
+                <h2 className="text-base font-semibold text-[var(--color-wa-text-main)]">Disciplinas asignadas</h2>
+                {allServices.length === 0 ? (
+                  <p className="text-sm text-[var(--color-wa-text-sec)]">No hay disciplinas cargadas aún.</p>
+                ) : (
+                  <div className="flex flex-wrap gap-2">
+                    {allServices.map((s) => {
+                      const checked = assignedServiceIds.has(s.id);
+                      return (
+                        <button
+                          key={s.id}
+                          onClick={() => toggleService(s.id)}
+                          className={`px-3 py-1.5 rounded-xl text-sm font-medium border transition-colors ${
+                            checked
+                              ? "bg-[var(--color-wa-green)]/15 border-[var(--color-wa-green)] text-[var(--color-wa-green)]"
+                              : "bg-transparent border-[var(--color-wa-sep)] text-[var(--color-wa-text-sec)] hover:border-[var(--color-wa-green)]/50"
+                          }`}
+                        >
+                          {checked ? "✓ " : ""}{s.name}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+                <div>
+                  <button onClick={saveServices} disabled={savingServices} className={BTN_PRIMARY}>
+                    {savingServices ? "Guardando…" : "Guardar disciplinas"}
                   </button>
                 </div>
               </div>

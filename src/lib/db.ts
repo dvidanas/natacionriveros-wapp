@@ -212,6 +212,14 @@ function migrate(db: Database.Database) {
   } catch { /* ya existe */ }
 
   db.exec(`
+    CREATE TABLE IF NOT EXISTS resource_services (
+      resource_id INTEGER NOT NULL REFERENCES resources(id) ON DELETE CASCADE,
+      service_id  INTEGER NOT NULL REFERENCES services(id)  ON DELETE CASCADE,
+      PRIMARY KEY (resource_id, service_id)
+    );
+  `);
+
+  db.exec(`
     CREATE TABLE IF NOT EXISTS promotions (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       title TEXT NOT NULL,
@@ -973,6 +981,29 @@ export function getSlotCapacityInfo(resourceId: number, dayOfWeek: number, timeS
     )
     .get(resourceId, timeStart))!.count;
   return { enrolled, max_capacity: slot?.max_capacity ?? 20 };
+}
+
+// ── Resource ↔ Services (many-to-many) ─────────────────────
+
+export function getServicesForResource(resourceId: number): Service[] {
+  return getDb()
+    .prepare<[number], Service>(
+      `SELECT s.* FROM services s
+       JOIN resource_services rs ON rs.service_id = s.id
+       WHERE rs.resource_id = ?
+       ORDER BY s.name ASC`
+    )
+    .all(resourceId);
+}
+
+export function setServicesForResource(resourceId: number, serviceIds: number[]): void {
+  const db = getDb();
+  const replace = db.transaction(() => {
+    db.prepare("DELETE FROM resource_services WHERE resource_id = ?").run(resourceId);
+    const ins = db.prepare("INSERT INTO resource_services (resource_id, service_id) VALUES (?, ?)");
+    for (const sid of serviceIds) ins.run(resourceId, sid);
+  });
+  replace();
 }
 
 export function getCapacitySummary(): Array<{ resource_name: string; day_of_week: number; time_start: string; enrolled: number; max_capacity: number }> {
