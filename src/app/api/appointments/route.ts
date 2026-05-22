@@ -28,7 +28,46 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "JSON inválido" }, { status: 400 });
   }
 
-  const { resource_id, date, time_start, duration_minutes, service, notes, contact_name, contact_phone, conversation_id } = body;
+  // Batch enrollment mode: persons[] + services[] + contact_phone + date
+  if (Array.isArray(body.persons)) {
+    const { persons, services, contact_phone, date, notes, resource_id } = body;
+    if (!Array.isArray(services) || services.length === 0) {
+      return NextResponse.json({ error: "Se requiere al menos una disciplina" }, { status: 400 });
+    }
+    if (!date) {
+      return NextResponse.json({ error: "Se requiere la fecha" }, { status: 400 });
+    }
+
+    let rid = resource_id ? Number(resource_id) : 0;
+    if (!rid) {
+      const first = listResources()[0];
+      if (!first) return NextResponse.json({ error: "No hay personal activo" }, { status: 400 });
+      rid = first.id;
+    }
+
+    const ids: number[] = [];
+    for (const person of persons as Array<{ name: string; dni?: string }>) {
+      for (const svc of services as string[]) {
+        const id = createAppointment({
+          resource_id: rid,
+          service: svc,
+          date: date as string,
+          time_start: "00:00",
+          duration_minutes: 0,
+          contact_name: person.name || null,
+          contact_phone: typeof contact_phone === "string" ? contact_phone : null,
+          dni: person.dni || null,
+          notes: typeof notes === "string" ? notes : null,
+          source: "manual",
+        });
+        ids.push(id);
+      }
+    }
+    return NextResponse.json({ ids }, { status: 201 });
+  }
+
+  // Single appointment mode (used by bot and legacy)
+  const { resource_id, date, time_start, duration_minutes, service, notes, contact_name, contact_phone, conversation_id, dni } = body;
 
   if (!resource_id || !date || !time_start || !duration_minutes) {
     return NextResponse.json({ error: "Faltan campos requeridos" }, { status: 400 });
@@ -44,6 +83,7 @@ export async function POST(req: NextRequest) {
     notes: typeof notes === "string" ? notes : null,
     contact_name: typeof contact_name === "string" ? contact_name : null,
     contact_phone: typeof contact_phone === "string" ? contact_phone : null,
+    dni: typeof dni === "string" ? dni : null,
     source: "manual",
   });
 

@@ -211,6 +211,10 @@ function migrate(db: Database.Database) {
     db.exec("ALTER TABLE services ADD COLUMN hours TEXT");
   } catch { /* ya existe */ }
 
+  try {
+    db.exec("ALTER TABLE appointments ADD COLUMN dni TEXT");
+  } catch { /* ya existe */ }
+
   db.exec(`
     CREATE TABLE IF NOT EXISTS resource_services (
       resource_id INTEGER NOT NULL REFERENCES resources(id) ON DELETE CASCADE,
@@ -525,6 +529,7 @@ export interface Appointment {
   notes: string | null;
   contact_name: string | null;
   contact_phone: string | null;
+  dni: string | null;
   created_at: number;
 }
 
@@ -667,14 +672,15 @@ export function createAppointment(data: {
   notes?: string | null;
   contact_name?: string | null;
   contact_phone?: string | null;
+  dni?: string | null;
 }): number {
   const endMins = timeToMinutes(data.time_start) + data.duration_minutes;
   const time_end = minutesToTime(endMins);
   const res = getDb()
     .prepare(
       `INSERT INTO appointments
-        (resource_id, conversation_id, service, date, time_start, time_end, duration_minutes, source, notes, contact_name, contact_phone)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        (resource_id, conversation_id, service, date, time_start, time_end, duration_minutes, source, notes, contact_name, contact_phone, dni)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .run(
       data.resource_id,
@@ -687,7 +693,8 @@ export function createAppointment(data: {
       data.source ?? "manual",
       data.notes ?? null,
       data.contact_name ?? null,
-      data.contact_phone ?? null
+      data.contact_phone ?? null,
+      data.dni ?? null
     );
   return res.lastInsertRowid as number;
 }
@@ -712,6 +719,7 @@ export function updateAppointment(
     notes?: string | null;
     contact_name?: string | null;
     contact_phone?: string | null;
+    dni?: string | null;
   }
 ): void {
   const endMins = timeToMinutes(data.time_start) + data.duration_minutes;
@@ -727,7 +735,8 @@ export function updateAppointment(
            duration_minutes = ?,
            notes = ?,
            contact_name = ?,
-           contact_phone = ?
+           contact_phone = ?,
+           dni = ?
        WHERE id = ?`
     )
     .run(
@@ -740,6 +749,7 @@ export function updateAppointment(
       data.notes ?? null,
       data.contact_name ?? null,
       data.contact_phone ?? null,
+      data.dni ?? null,
       id
     );
 }

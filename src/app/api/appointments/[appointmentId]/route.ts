@@ -18,9 +18,9 @@ export async function PUT(
     return NextResponse.json({ error: "JSON inválido" }, { status: 400 });
   }
 
-  const { resource_id, date, time_start, duration_minutes, service, notes, contact_name, contact_phone } = body;
+  const { resource_id, date, time_start, duration_minutes, service, notes, contact_name, contact_phone, dni } = body;
 
-  if (!resource_id || !date || !time_start || !duration_minutes) {
+  if (!resource_id || !date || !time_start) {
     return NextResponse.json({ error: "Faltan campos requeridos" }, { status: 400 });
   }
 
@@ -28,11 +28,12 @@ export async function PUT(
     resource_id: Number(resource_id),
     service: typeof service === "string" ? service : null,
     date: date as string,
-    time_start: time_start as string,
-    duration_minutes: Number(duration_minutes),
+    time_start: (time_start as string) || "00:00",
+    duration_minutes: Number(duration_minutes) || 0,
     notes: typeof notes === "string" ? notes : null,
     contact_name: typeof contact_name === "string" ? contact_name : null,
     contact_phone: typeof contact_phone === "string" ? contact_phone : null,
+    dni: typeof dni === "string" ? dni : null,
   });
 
   return NextResponse.json({ ok: true });
