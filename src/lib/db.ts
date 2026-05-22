@@ -822,11 +822,13 @@ export function listServicesWithEnrollment(includeInactive = false): ServiceWith
     .prepare<[], ServiceWithEnrollment>(
       `SELECT s.*,
         (SELECT COUNT(*) FROM appointments WHERE service = s.name AND status != 'cancelled') as enrolled,
-        (SELECT GROUP_CONCAT(r.name, ', ')
-         FROM resource_services rs
-         JOIN resources r ON r.id = rs.resource_id
-         WHERE rs.service_id = s.id AND r.active = 1) as resource_names
-       FROM services s ${where} ORDER BY s.name ASC`
+        GROUP_CONCAT(r.name, ', ') as resource_names
+       FROM services s
+       LEFT JOIN resource_services rs ON rs.service_id = s.id
+       LEFT JOIN resources r ON r.id = rs.resource_id AND r.active = 1
+       ${where}
+       GROUP BY s.id
+       ORDER BY s.name ASC`
     )
     .all();
 }
