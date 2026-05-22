@@ -281,8 +281,7 @@ export default function InscripcionesPage() {
   // New enrollment form
   const [modalDate, setModalDate] = useState(() => dateToStr(new Date()));
   const [modalPhone, setModalPhone] = useState("");
-  const [modalPersons, setModalPersons] = useState<{ name: string; dni: string }[]>([{ name: "", dni: "" }]);
-  const [modalServices, setModalServices] = useState<string[]>([]);
+  const [modalPersons, setModalPersons] = useState<{ name: string; dni: string; services: string[] }[]>([{ name: "", dni: "", services: [] }]);
   const [modalNotes, setModalNotes] = useState("");
 
   // Edit form
@@ -346,8 +345,7 @@ export default function InscripcionesPage() {
     setEditingEnrollment(null);
     setModalDate(dateToStr(new Date()));
     setModalPhone("");
-    setModalPersons([{ name: "", dni: "" }]);
-    setModalServices([]);
+    setModalPersons([{ name: "", dni: "", services: [] }]);
     setModalNotes("");
     setShowModal(true);
   }
@@ -368,14 +366,18 @@ export default function InscripcionesPage() {
     setEditingEnrollment(null);
   }
 
-  function toggleService(name: string) {
-    setModalServices((prev) =>
-      prev.includes(name) ? prev.filter((s) => s !== name) : [...prev, name]
+  function togglePersonService(personIdx: number, svcName: string) {
+    setModalPersons((prev) =>
+      prev.map((p, i) =>
+        i === personIdx
+          ? { ...p, services: p.services.includes(svcName) ? p.services.filter((s) => s !== svcName) : [...p.services, svcName] }
+          : p
+      )
     );
   }
 
   function addPerson() {
-    setModalPersons((prev) => [...prev, { name: "", dni: "" }]);
+    setModalPersons((prev) => [...prev, { name: "", dni: "", services: [] }]);
   }
 
   function removePerson(i: number) {
@@ -387,8 +389,8 @@ export default function InscripcionesPage() {
   }
 
   async function saveNew() {
-    const validPersons = modalPersons.filter((p) => p.name.trim());
-    if (validPersons.length === 0 || modalServices.length === 0) return;
+    const validPersons = modalPersons.filter((p) => p.name.trim() && p.services.length > 0);
+    if (validPersons.length === 0) return;
     setSavingModal(true);
     try {
       const rid = resources[0]?.id;
@@ -397,7 +399,6 @@ export default function InscripcionesPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           persons: validPersons,
-          services: modalServices,
           contact_phone: modalPhone || null,
           date: modalDate,
           notes: modalNotes || null,
@@ -645,79 +646,76 @@ export default function InscripcionesPage() {
                         + Agregar persona
                       </button>
                     </div>
-                    <div className="space-y-2">
+                    <div className="space-y-3">
                       {modalPersons.map((p, i) => (
-                        <div key={i} className="flex gap-2 items-start">
-                          <div className="flex-1 space-y-1.5">
-                            <input
-                              type="text"
-                              value={p.name}
-                              onChange={(e) => updatePerson(i, "name", e.target.value)}
-                              placeholder="Nombre completo"
-                              className={inputCls}
-                            />
-                            <input
-                              type="text"
-                              value={p.dni}
-                              onChange={(e) => updatePerson(i, "dni", e.target.value)}
-                              placeholder="DNI"
-                              className={inputCls}
-                            />
-                          </div>
+                        <div key={i} className="rounded-xl border border-[var(--color-wa-sep)] p-3 space-y-2 relative">
                           {modalPersons.length > 1 && (
                             <button
                               type="button"
                               onClick={() => removePerson(i)}
-                              className="mt-1 p-2 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors flex-shrink-0"
+                              className="absolute top-2 right-2 p-1 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
                             >
-                              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
                               </svg>
                             </button>
                           )}
+                          <input
+                            type="text"
+                            value={p.name}
+                            onChange={(e) => updatePerson(i, "name", e.target.value)}
+                            placeholder="Nombre completo"
+                            className={inputCls}
+                          />
+                          <input
+                            type="text"
+                            value={p.dni}
+                            onChange={(e) => updatePerson(i, "dni", e.target.value)}
+                            placeholder="DNI"
+                            className={inputCls}
+                          />
+                          {/* Per-person discipline selector */}
+                          <div>
+                            <p className="text-xs text-[var(--color-wa-text-sec)] mb-1.5 font-medium">
+                              Disciplina
+                              {p.services.length > 0 && (
+                                <span className="ml-1.5 text-[var(--color-wa-green)]">
+                                  {p.services.join(", ")}
+                                </span>
+                              )}
+                            </p>
+                            {services.length === 0 ? (
+                              <p className="text-xs text-[var(--color-wa-text-sec)] italic">Sin disciplinas activas</p>
+                            ) : (
+                              <div className="flex flex-wrap gap-1.5">
+                                {services.map((s) => {
+                                  const selected = p.services.includes(s.name);
+                                  const full = s.enrolled >= s.capacity;
+                                  return (
+                                    <button
+                                      key={s.id}
+                                      type="button"
+                                      onClick={() => !full && togglePersonService(i, s.name)}
+                                      disabled={full && !selected}
+                                      className={`text-xs px-2.5 py-1 rounded-full border font-medium transition-colors ${
+                                        selected
+                                          ? "bg-[var(--color-wa-green)] text-[var(--color-wa-green-text)] border-[var(--color-wa-green)]"
+                                          : full
+                                          ? "border-[var(--color-wa-sep)] text-[var(--color-wa-text-sec)] opacity-40 cursor-not-allowed"
+                                          : "border-[var(--color-wa-sep)] text-[var(--color-wa-text-main)] hover:border-[var(--color-wa-green)]"
+                                      }`}
+                                    >
+                                      {s.name}
+                                      {full && !selected && " · Cupo lleno"}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            )}
+                          </div>
                         </div>
                       ))}
                     </div>
-                  </div>
-
-                  {/* Disciplines */}
-                  <div>
-                    <label className="block text-sm font-medium text-[var(--color-wa-text-sec)] mb-2">
-                      Disciplinas
-                      {modalServices.length > 0 && (
-                        <span className="ml-2 text-xs text-[var(--color-wa-green)] font-normal">
-                          {modalServices.length} seleccionada{modalServices.length !== 1 ? "s" : ""}
-                        </span>
-                      )}
-                    </label>
-                    {services.length === 0 ? (
-                      <p className="text-sm text-[var(--color-wa-text-sec)] italic">Sin disciplinas activas</p>
-                    ) : (
-                      <div className="flex flex-wrap gap-2">
-                        {services.map((s) => {
-                          const selected = modalServices.includes(s.name);
-                          const full = s.enrolled >= s.capacity;
-                          return (
-                            <button
-                              key={s.id}
-                              type="button"
-                              onClick={() => !full && toggleService(s.name)}
-                              disabled={full && !selected}
-                              className={`text-xs px-3 py-1.5 rounded-full border font-medium transition-colors ${
-                                selected
-                                  ? "bg-[var(--color-wa-green)] text-[var(--color-wa-green-text)] border-[var(--color-wa-green)]"
-                                  : full
-                                  ? "border-[var(--color-wa-sep)] text-[var(--color-wa-text-sec)] opacity-40 cursor-not-allowed"
-                                  : "border-[var(--color-wa-sep)] text-[var(--color-wa-text-main)] hover:border-[var(--color-wa-green)]"
-                              }`}
-                            >
-                              {s.name}
-                              {full && !selected && " · Cupo lleno"}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    )}
                   </div>
 
                   <div>
@@ -748,7 +746,7 @@ export default function InscripcionesPage() {
                 onClick={editingEnrollment ? saveEdit : saveNew}
                 disabled={
                   savingModal ||
-                  (!editingEnrollment && (modalPersons.every((p) => !p.name.trim()) || modalServices.length === 0))
+                  (!editingEnrollment && modalPersons.every((p) => !p.name.trim() || p.services.length === 0))
                 }
                 className="flex-1 py-3 bg-[var(--color-wa-green)] text-[var(--color-wa-green-text)] text-sm font-semibold rounded-xl hover:bg-[var(--color-wa-green-dark)] disabled:opacity-50 transition-colors"
               >

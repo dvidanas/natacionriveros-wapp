@@ -28,12 +28,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "JSON inválido" }, { status: 400 });
   }
 
-  // Batch enrollment mode: persons[] + services[] + contact_phone + date
+  // Batch enrollment mode: persons[] each with their own services[], + contact_phone + date
   if (Array.isArray(body.persons)) {
-    const { persons, services, contact_phone, date, notes, resource_id } = body;
-    if (!Array.isArray(services) || services.length === 0) {
-      return NextResponse.json({ error: "Se requiere al menos una disciplina" }, { status: 400 });
-    }
+    const { persons, contact_phone, date, notes, resource_id } = body;
     if (!date) {
       return NextResponse.json({ error: "Se requiere la fecha" }, { status: 400 });
     }
@@ -46,8 +43,9 @@ export async function POST(req: NextRequest) {
     }
 
     const ids: number[] = [];
-    for (const person of persons as Array<{ name: string; dni?: string }>) {
-      for (const svc of services as string[]) {
+    for (const person of persons as Array<{ name: string; dni?: string; services?: string[] }>) {
+      const personServices = Array.isArray(person.services) ? person.services : [];
+      for (const svc of personServices) {
         const id = createAppointment({
           resource_id: rid,
           service: svc,
