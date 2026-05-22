@@ -9,6 +9,8 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
   updateService(Number(id), {
     ...(body.name !== undefined && { name: body.name.trim() }),
     ...(body.description !== undefined && { description: body.description?.trim() ?? null }),
+    ...(body.days !== undefined && { days: body.days?.trim() ?? null }),
+    ...(body.hours !== undefined && { hours: body.hours?.trim() ?? null }),
     ...(body.price !== undefined && { price: body.price?.trim() ?? null }),
     ...(body.duration_minutes !== undefined && { duration_minutes: Number(body.duration_minutes) }),
     ...(body.teacher !== undefined && { teacher: body.teacher?.trim() ?? null }),

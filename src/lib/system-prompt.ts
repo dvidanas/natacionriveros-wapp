@@ -13,6 +13,8 @@ export function buildSystemPrompt(): string {
             const detail: string[] = [];
             if (s.teacher) detail.push(s.teacher);
             if (s.price) detail.push(`$${Number(s.price).toLocaleString("es-AR")}/mes`);
+            if (s.days) detail.push(s.days);
+            if (s.hours) detail.push(s.hours);
             if (s.description) detail.push(s.description);
             detail.push(cupo);
             return `${s.name}${detail.length ? ` (${detail.join(", ")})` : ""}`;

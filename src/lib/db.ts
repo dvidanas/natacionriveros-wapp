@@ -203,6 +203,14 @@ function migrate(db: Database.Database) {
     db.exec("ALTER TABLE services ADD COLUMN capacity INTEGER NOT NULL DEFAULT 10");
   } catch { /* ya existe */ }
 
+  try {
+    db.exec("ALTER TABLE services ADD COLUMN days TEXT");
+  } catch { /* ya existe */ }
+
+  try {
+    db.exec("ALTER TABLE services ADD COLUMN hours TEXT");
+  } catch { /* ya existe */ }
+
   db.exec(`
     CREATE TABLE IF NOT EXISTS promotions (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -778,6 +786,8 @@ export interface Service {
   id: number;
   name: string;
   description: string | null;
+  days: string | null;
+  hours: string | null;
   price: string | null;
   duration_minutes: number;
   teacher: string | null;
@@ -828,8 +838,8 @@ export function hasEnrollmentForConversation(conversationId: number, serviceName
 
 export function createService(data: Omit<Service, "id" | "created_at">): number {
   const res = getDb()
-    .prepare("INSERT INTO services (name, description, price, duration_minutes, teacher, active, capacity) VALUES (?, ?, ?, ?, ?, ?, ?)")
-    .run(data.name, data.description ?? null, data.price ?? null, data.duration_minutes, data.teacher ?? null, data.active, data.capacity ?? 10);
+    .prepare("INSERT INTO services (name, description, days, hours, price, duration_minutes, teacher, active, capacity) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
+    .run(data.name, data.description ?? null, data.days ?? null, data.hours ?? null, data.price ?? null, data.duration_minutes, data.teacher ?? null, data.active, data.capacity ?? 10);
   return res.lastInsertRowid as number;
 }
 

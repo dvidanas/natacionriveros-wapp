@@ -18,6 +18,8 @@ export async function POST(req: Request) {
   const id = createService({
     name: body.name.trim(),
     description: body.description?.trim() ?? null,
+    days: body.days?.trim() ?? null,
+    hours: body.hours?.trim() ?? null,
     price: body.price?.trim() ?? null,
     duration_minutes: Number(body.duration_minutes) || 60,
     teacher: body.teacher?.trim() ?? null,

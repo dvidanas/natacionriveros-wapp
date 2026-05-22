@@ -7,6 +7,8 @@ interface Service {
   id: number;
   name: string;
   description: string | null;
+  days: string | null;
+  hours: string | null;
   price: string | null;
   duration_minutes: number;
   teacher: string | null;
@@ -41,7 +43,7 @@ const BTN_GHOST =
 
 // ── Service Form ──────────────────────────────────────────────────────────────
 
-const EMPTY_SVC = { name: "", description: "", price: "", duration_minutes: 60, teacher: "", capacity: 10 };
+const EMPTY_SVC = { name: "", description: "", days: "", hours: "", price: "", duration_minutes: 60, teacher: "", capacity: 10 };
 
 function ServiceForm({
   initial,
@@ -54,7 +56,7 @@ function ServiceForm({
 }) {
   const [form, setForm] = useState(
     initial
-      ? { name: initial.name, description: initial.description ?? "", price: initial.price ?? "", duration_minutes: initial.duration_minutes, teacher: initial.teacher ?? "", capacity: initial.capacity ?? 10 }
+      ? { name: initial.name, description: initial.description ?? "", days: initial.days ?? "", hours: initial.hours ?? "", price: initial.price ?? "", duration_minutes: initial.duration_minutes, teacher: initial.teacher ?? "", capacity: initial.capacity ?? 10 }
       : EMPTY_SVC
   );
   const [saving, setSaving] = useState(false);
@@ -80,42 +82,50 @@ function ServiceForm({
   };
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-3">
       <h2 className="text-base font-semibold text-[var(--color-wa-text-main)]">
         {initial ? "Editar disciplina" : "Nueva disciplina"}
       </h2>
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <div>
-          <label className="block text-sm font-medium text-[var(--color-wa-text-main)] mb-1">Nombre *</label>
+      <div className="grid grid-cols-2 gap-2">
+        <div className="col-span-2">
+          <label className="block text-xs font-medium text-[var(--color-wa-text-sec)] mb-1">Nombre *</label>
           <input value={form.name} onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))} className={INPUT} placeholder="Ej: Natación para Niños" />
         </div>
         <div>
-          <label className="block text-sm font-medium text-[var(--color-wa-text-main)] mb-1">Precio mensual</label>
+          <label className="block text-xs font-medium text-[var(--color-wa-text-sec)] mb-1">Precio mensual</label>
           <input value={form.price} onChange={(e) => setForm((p) => ({ ...p, price: e.target.value }))} className={INPUT} placeholder="Ej: $45.000" />
         </div>
         <div>
-          <label className="block text-sm font-medium text-[var(--color-wa-text-main)] mb-1">Profesor/a</label>
+          <label className="block text-xs font-medium text-[var(--color-wa-text-sec)] mb-1">Profesor/a</label>
           <input value={form.teacher} onChange={(e) => setForm((p) => ({ ...p, teacher: e.target.value }))} className={INPUT} placeholder="Ej: Prof. Guido Riveros" />
         </div>
         <div>
-          <label className="block text-sm font-medium text-[var(--color-wa-text-main)] mb-1">Duración de clase (min)</label>
-          <input type="number" min={30} step={15} value={form.duration_minutes} onChange={(e) => setForm((p) => ({ ...p, duration_minutes: Number(e.target.value) }))} className={INPUT} />
+          <label className="block text-xs font-medium text-[var(--color-wa-text-sec)] mb-1">Días</label>
+          <input value={form.days} onChange={(e) => setForm((p) => ({ ...p, days: e.target.value }))} className={INPUT} placeholder="Ej: Lun / Mié / Vie" />
         </div>
         <div>
-          <label className="block text-sm font-medium text-[var(--color-wa-text-main)] mb-1">Cupo máximo</label>
+          <label className="block text-xs font-medium text-[var(--color-wa-text-sec)] mb-1">Horarios</label>
+          <input value={form.hours} onChange={(e) => setForm((p) => ({ ...p, hours: e.target.value }))} className={INPUT} placeholder="Ej: 08:00 – 09:00" />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-[var(--color-wa-text-sec)] mb-1">Cupo máximo</label>
           <input type="number" min={1} step={1} value={form.capacity} onChange={(e) => setForm((p) => ({ ...p, capacity: Number(e.target.value) }))} className={INPUT} placeholder="10" />
           {initial && (
-            <p className="text-xs text-[var(--color-wa-text-sec)] mt-1">
-              Inscriptos actuales: <span className={`font-semibold ${initial.enrolled >= initial.capacity ? "text-red-500" : "text-[var(--color-wa-green)]"}`}>{initial.enrolled}</span> / {initial.capacity ?? 10}
+            <p className="text-xs text-[var(--color-wa-text-sec)] mt-0.5">
+              Inscriptos: <span className={`font-semibold ${initial.enrolled >= initial.capacity ? "text-red-500" : "text-[var(--color-wa-green)]"}`}>{initial.enrolled}</span>/{initial.capacity ?? 10}
             </p>
           )}
         </div>
-        <div className="sm:col-span-2">
-          <label className="block text-sm font-medium text-[var(--color-wa-text-main)] mb-1">Descripción / Horarios</label>
-          <input value={form.description} onChange={(e) => setForm((p) => ({ ...p, description: e.target.value }))} className={INPUT} placeholder="Ej: Mar/Jue 18:00 y 19:00" />
+        <div>
+          <label className="block text-xs font-medium text-[var(--color-wa-text-sec)] mb-1">Duración (min)</label>
+          <input type="number" min={30} step={15} value={form.duration_minutes} onChange={(e) => setForm((p) => ({ ...p, duration_minutes: Number(e.target.value) }))} className={INPUT} />
+        </div>
+        <div className="col-span-2">
+          <label className="block text-xs font-medium text-[var(--color-wa-text-sec)] mb-1">Descripción</label>
+          <input value={form.description} onChange={(e) => setForm((p) => ({ ...p, description: e.target.value }))} className={INPUT} placeholder="Ej: Apto para todas las edades" />
         </div>
       </div>
-      <div className="flex gap-2">
+      <div className="flex gap-2 pt-1">
         <button onClick={save} disabled={saving || !form.name.trim()} className={BTN_PRIMARY}>
           {saving ? "Guardando…" : "Guardar"}
         </button>

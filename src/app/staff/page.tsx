@@ -18,8 +18,8 @@ interface AvailabilitySlot {
   time_end: string;
 }
 
-const DAYS = ["Dom", "Lun", "Mar", "MiÃ©", "Jue", "Vie", "SÃ¡b"];
-const DAYS_FULL = ["Domingo", "Lunes", "Martes", "MiÃ©rcoles", "Jueves", "Viernes", "SÃ¡bado"];
+const DAYS = ["Dom", "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"];
+const DAYS_FULL = ["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"];
 
 const INPUT =
   "w-full bg-[var(--color-wa-bg-main)] border border-[var(--color-wa-sep)] rounded-xl px-3 py-2.5 text-sm text-[var(--color-wa-text-main)] outline-none focus:border-[var(--color-wa-green)] focus:ring-2 focus:ring-[var(--color-wa-green)]/20 transition-colors";
@@ -168,7 +168,7 @@ export default function StaffPage() {
 
           <ul className="flex-1 overflow-y-auto px-2 pb-4 flex flex-col gap-1">
             {staff.length === 0 && (
-              <li className="px-3 py-3 text-sm text-[var(--color-wa-text-sec)]">Sin Profesores aÃºn.</li>
+              <li className="px-3 py-3 text-sm text-[var(--color-wa-text-sec)]">Sin profesores aún.</li>
             )}
             {staff.map((r) => (
               <li key={r.id}>
@@ -215,16 +215,16 @@ export default function StaffPage() {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-sm font-medium text-[var(--color-wa-text-main)] mb-1">Nombre *</label>
-                  <input value={newName} onChange={(e) => setNewName(e.target.value)} onKeyDown={(e) => e.key === "Enter" && createStaff()} className={INPUT} placeholder="Ej: MartÃ­n" />
+                  <input value={newName} onChange={(e) => setNewName(e.target.value)} onKeyDown={(e) => e.key === "Enter" && createStaff()} className={INPUT} placeholder="Ej: Martín" />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-[var(--color-wa-text-main)] mb-1">TelÃ©fono</label>
+                  <label className="block text-sm font-medium text-[var(--color-wa-text-main)] mb-1">Teléfono</label>
                   <input value={newPhone} onChange={(e) => setNewPhone(e.target.value)} className={INPUT} placeholder="Ej: 2646123456" />
                 </div>
               </div>
               <div className="flex gap-2">
                 <button onClick={createStaff} disabled={creating || !newName.trim()} className={BTN_PRIMARY}>
-                  {creating ? "Guardandoâ€¦" : "Crear"}
+                  {creating ? "Guardando…" : "Crear"}
                 </button>
                 <button onClick={() => setAddingNew(false)} className="px-4 py-2 text-sm text-[var(--color-wa-text-sec)] hover:text-[var(--color-wa-text-main)] transition-colors">
                   Cancelar
@@ -261,13 +261,13 @@ export default function StaffPage() {
                     <input value={editName} onChange={(e) => setEditName(e.target.value)} className={INPUT} />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-[var(--color-wa-text-main)] mb-1">TelÃ©fono</label>
+                    <label className="block text-sm font-medium text-[var(--color-wa-text-main)] mb-1">Teléfono</label>
                     <input value={editPhone} onChange={(e) => setEditPhone(e.target.value)} className={INPUT} placeholder="Ej: 2646123456" />
                   </div>
                 </div>
                 <div>
                   <button onClick={saveInfo} disabled={savingInfo || !editName.trim()} className={BTN_PRIMARY}>
-                    {savingInfo ? "Guardandoâ€¦" : "Guardar datos"}
+                    {savingInfo ? "Guardando…" : "Guardar datos"}
                   </button>
                 </div>
               </div>
@@ -305,7 +305,7 @@ export default function StaffPage() {
                             />
                           </>
                         ) : (
-                          <span className="text-sm text-[var(--color-wa-text-sec)]">{DAYS_FULL[i]} â€” sin atenciÃ³n</span>
+                          <span className=”text-sm text-[var(--color-wa-text-sec)]”>{DAYS_FULL[i]} – sin atención</span>
                         )}
                       </div>
                     );
@@ -313,7 +313,7 @@ export default function StaffPage() {
                 </div>
                 <div>
                   <button onClick={saveAvailability} disabled={savingAvail} className={BTN_PRIMARY}>
-                    {savingAvail ? "Guardandoâ€¦" : "Guardar disponibilidad"}
+                    {savingAvail ? "Guardando…" : "Guardar disponibilidad"}
                   </button>
                 </div>
               </div>
@@ -323,7 +323,7 @@ export default function StaffPage() {
           {/* Empty state */}
           {!selected && !addingNew && (
             <div className="flex-1 flex items-center justify-center text-[var(--color-wa-text-sec)] text-sm">
-              SeleccionÃ¡ un integrante del Profesores para ver o editar sus datos.
+              Seleccioná un integrante de Profesores para ver o editar sus datos.
             </div>
           )}
           </div>
@@ -334,7 +334,7 @@ export default function StaffPage() {
 
       {deleteTarget && (
         <ConfirmDialog
-          message={`Â¿Eliminar a "${deleteTarget.name}" del Profesores? Esta acciÃ³n no se puede deshacer.`}
+          message={`¿Eliminar a "${deleteTarget.name}" de Profesores? Esta acción no se puede deshacer.`}
           onConfirm={confirmDeleteStaff}
           onCancel={() => setDeleteTarget(null)}
         />
