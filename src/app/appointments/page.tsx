@@ -271,6 +271,7 @@ export default function InscripcionesPage() {
   const [stats, setStats] = useState<Stats>({ pending: 0, confirmed: 0, cancelled: 0 });
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<"all" | "pending" | "confirmed" | "cancelled">("all");
+  const [disciplineFilter, setDisciplineFilter] = useState<string | null>(null);
 
   // Modal state
   const [showModal, setShowModal] = useState(false);
@@ -323,6 +324,15 @@ export default function InscripcionesPage() {
       .then((r) => r.json())
       .then((data: ServiceOption[]) => setServices(data.filter((s) => s.enrolled !== undefined)));
   }, []);
+
+  // Count enrollments per discipline (all statuses) in the current month view
+  const disciplineCount = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const e of enrollments) {
+      if (e.service) counts[e.service] = (counts[e.service] || 0) + 1;
+    }
+    return counts;
+  }, [enrollments]);
 
   async function changeStatus(id: number, status: Enrollment["status"]) {
     setEnrollments((prev) => prev.map((e) => (e.id === id ? { ...e, status } : e)));
@@ -447,10 +457,11 @@ export default function InscripcionesPage() {
   const nextMonth = () =>
     setCurrentMonth((m) => new Date(m.getFullYear(), m.getMonth() + 1, 1));
 
-  const filtered = useMemo(
-    () => (filter === "all" ? enrollments : enrollments.filter((e) => e.status === filter)),
-    [enrollments, filter]
-  );
+  const filtered = useMemo(() => {
+    let list = filter === "all" ? enrollments : enrollments.filter((e) => e.status === filter);
+    if (disciplineFilter) list = list.filter((e) => e.service === disciplineFilter);
+    return list;
+  }, [enrollments, filter, disciplineFilter]);
 
   const inputCls =
     "w-full text-sm bg-[var(--color-wa-input)] border border-[var(--color-wa-sep)] rounded-lg px-3 py-2.5 text-[var(--color-wa-text-main)] focus:outline-none focus:border-[var(--color-wa-green)] placeholder:text-[var(--color-wa-text-sec)]";
@@ -459,119 +470,252 @@ export default function InscripcionesPage() {
     <div className="flex flex-col h-dvh bg-[var(--color-wa-bg-main)]">
       <TopNav />
 
-      <main className="flex-1 flex flex-col overflow-hidden">
-        <PullToRefresh onRefresh={fetchData} className="flex-1 flex flex-col overflow-hidden">
-          <div className="flex-1 overflow-y-auto">
-            <div className="max-w-3xl mx-auto px-4 py-4 space-y-4">
+      <div className="flex-1 flex min-h-0 md:p-3 md:gap-3 overflow-hidden">
 
-              {/* Header */}
-              <div className="flex items-center justify-between">
-                <div>
-                  <h1 className="text-xl font-bold text-[var(--color-wa-text-main)]">Inscripciones</h1>
-                  <p className="text-sm text-[var(--color-wa-text-sec)]">
-                    {MONTH_NAMES[currentMonth.getMonth()]} {currentMonth.getFullYear()}
-                  </p>
-                </div>
-                <button
-                  onClick={openNewModal}
-                  className="flex items-center gap-2 px-4 py-2 bg-[var(--color-wa-green)] text-[var(--color-wa-green-text)] text-sm font-semibold rounded-xl hover:bg-[var(--color-wa-green-dark)] transition-colors shadow-sm"
-                >
-                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
-                  </svg>
-                  Nueva
-                </button>
-              </div>
-
-              {/* Month nav + stats */}
-              <div className="flex items-center justify-between gap-3">
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={prevMonth}
-                    className="p-1.5 rounded-lg hover:bg-[var(--color-wa-hover)] transition-colors"
-                  >
-                    <svg className="w-4 h-4 text-[var(--color-wa-text-sec)]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
-                    </svg>
-                  </button>
-                  <button
-                    onClick={nextMonth}
-                    className="p-1.5 rounded-lg hover:bg-[var(--color-wa-hover)] transition-colors"
-                  >
-                    <svg className="w-4 h-4 text-[var(--color-wa-text-sec)]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
-                    </svg>
-                  </button>
-                </div>
-
-                <div className="flex gap-3 text-xs">
-                  <span className="flex items-center gap-1">
-                    <span className="w-2 h-2 rounded-full bg-amber-400" />
-                    <span className="text-[var(--color-wa-text-sec)]">Pendientes</span>
-                    <span className="font-bold text-[var(--color-wa-text-main)]">{stats.pending}</span>
-                  </span>
-                  <span className="flex items-center gap-1">
-                    <span className="w-2 h-2 rounded-full bg-teal-400" />
-                    <span className="text-[var(--color-wa-text-sec)]">Confirmadas</span>
-                    <span className="font-bold text-[var(--color-wa-text-main)]">{stats.confirmed}</span>
-                  </span>
-                </div>
-              </div>
-
-              {/* Filter chips */}
-              <div className="flex gap-2 flex-wrap">
-                {(["all", "pending", "confirmed", "cancelled"] as const).map((f) => (
-                  <button
-                    key={f}
-                    onClick={() => setFilter(f)}
-                    className={`text-xs px-3 py-1.5 rounded-full font-semibold transition-colors ${
-                      filter === f
-                        ? "bg-[var(--color-wa-green)] text-[var(--color-wa-green-text)]"
-                        : "bg-[var(--color-wa-hover)] text-[var(--color-wa-text-sec)] hover:text-[var(--color-wa-text-main)]"
-                    }`}
-                  >
-                    {f === "all" ? "Todas" : STATUS_LABELS[f]}
-                  </button>
-                ))}
-              </div>
-
-              {/* List */}
-              {loading ? (
-                <div className="space-y-3">
-                  {[1, 2, 3].map((i) => (
-                    <div key={i} className="h-24 rounded-2xl bg-[var(--color-wa-sep)] animate-pulse" />
-                  ))}
-                </div>
-              ) : filtered.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-16 text-center">
-                  <svg className="w-12 h-12 text-[var(--color-wa-text-sec)] opacity-20 mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                  </svg>
-                  <p className="text-base text-[var(--color-wa-text-sec)]">Sin inscripciones este mes</p>
-                  <button
-                    onClick={openNewModal}
-                    className="mt-3 text-sm text-[var(--color-wa-green)] font-semibold hover:underline"
-                  >
-                    + Nueva inscripción
-                  </button>
-                </div>
-              ) : (
-                <div className="space-y-3 pb-4">
-                  {filtered.map((e) => (
-                    <EnrollmentCard
-                      key={e.id}
-                      e={e}
-                      onStatusChange={changeStatus}
-                      onDelete={setDeleteId}
-                      onEdit={openEditModal}
-                    />
-                  ))}
-                </div>
-              )}
+        {/* ── Left sidebar ── */}
+        <aside
+          className="hidden md:flex w-[350px] flex-shrink-0 flex-col bg-[var(--color-wa-panel-l)] md:rounded-2xl overflow-hidden border border-[var(--color-wa-sep)]"
+          style={{ boxShadow: "var(--shadow-card)" }}
+        >
+          {/* Sidebar header */}
+          <div className="px-4 pt-4 pb-3 flex-shrink-0 border-b border-[var(--color-wa-sep)]">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-semibold tracking-widest uppercase text-[var(--color-wa-text-sec)]">
+                Disciplinas
+              </span>
+              <span className="text-xs text-[var(--color-wa-text-sec)]">
+                {MONTH_NAMES[currentMonth.getMonth()]}
+              </span>
             </div>
           </div>
-        </PullToRefresh>
-      </main>
+
+          <ul className="flex-1 overflow-y-auto px-2 py-2 flex flex-col gap-1">
+            {/* All */}
+            <li>
+              <button
+                onClick={() => setDisciplineFilter(null)}
+                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl cursor-pointer transition-colors text-left ${
+                  disciplineFilter === null
+                    ? "bg-[var(--color-wa-green)]/10"
+                    : "hover:bg-[var(--color-wa-hover)]"
+                }`}
+              >
+                <div className="w-2 h-2 rounded-full bg-[var(--color-wa-green)] flex-shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-[var(--color-wa-text-main)]">Todas las disciplinas</p>
+                  <p className="text-xs text-[var(--color-wa-text-sec)]">
+                    {enrollments.length} inscripción{enrollments.length !== 1 ? "es" : ""} este mes
+                  </p>
+                </div>
+                {disciplineFilter === null && (
+                  <svg className="w-4 h-4 text-[var(--color-wa-green)] flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                  </svg>
+                )}
+              </button>
+            </li>
+
+            {services.length > 0 && (
+              <li className="px-3 pt-2 pb-1">
+                <div className="border-t border-[var(--color-wa-sep)]" />
+              </li>
+            )}
+
+            {services.map((s) => {
+              const monthCount = disciplineCount[s.name] ?? 0;
+              const isFull = s.enrolled >= s.capacity;
+              const isSelected = disciplineFilter === s.name;
+              return (
+                <li key={s.id}>
+                  <button
+                    onClick={() => setDisciplineFilter(isSelected ? null : s.name)}
+                    className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl cursor-pointer transition-colors text-left ${
+                      isSelected
+                        ? "bg-[var(--color-wa-green)]/10"
+                        : "hover:bg-[var(--color-wa-hover)]"
+                    }`}
+                  >
+                    <div
+                      className={`w-2 h-2 rounded-full flex-shrink-0 ${
+                        isFull ? "bg-red-400" : monthCount > 0 ? "bg-[var(--color-wa-green)]" : "bg-[var(--color-wa-sep)]"
+                      }`}
+                    />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-[var(--color-wa-text-main)] truncate">{s.name}</p>
+                      <p
+                        className={`text-xs font-semibold ${
+                          isFull ? "text-red-500" : "text-[var(--color-wa-green)]"
+                        }`}
+                      >
+                        {isFull ? "Cupo lleno" : `${s.enrolled}/${s.capacity} inscriptos`}
+                      </p>
+                      {monthCount > 0 && (
+                        <p className="text-xs text-[var(--color-wa-text-sec)]">
+                          {monthCount} este mes
+                        </p>
+                      )}
+                    </div>
+                    {isSelected && (
+                      <svg className="w-4 h-4 text-[var(--color-wa-green)] flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                      </svg>
+                    )}
+                  </button>
+                </li>
+              );
+            })}
+
+            {services.length === 0 && (
+              <li className="px-3 py-3 text-sm text-[var(--color-wa-text-sec)]">Sin disciplinas activas.</li>
+            )}
+          </ul>
+        </aside>
+
+        {/* ── Main panel ── */}
+        <main
+          className="flex-1 min-w-0 flex flex-col bg-[var(--color-wa-panel-l)] md:rounded-2xl overflow-hidden border-r md:border border-[var(--color-wa-sep)]"
+          style={{ boxShadow: "var(--shadow-card)" }}
+        >
+          {/* Panel header */}
+          <div className="px-4 md:px-6 py-3 flex items-center justify-between border-b border-[var(--color-wa-sep)] flex-shrink-0">
+            <div>
+              <h2 className="text-base font-semibold text-[var(--color-wa-text-main)]">
+                {disciplineFilter ?? "Inscripciones"}
+              </h2>
+              <p className="text-xs text-[var(--color-wa-text-sec)]">
+                {MONTH_NAMES[currentMonth.getMonth()]} {currentMonth.getFullYear()}
+                {disciplineFilter && ` · ${filtered.length} inscripto${filtered.length !== 1 ? "s" : ""}`}
+              </p>
+            </div>
+            <button
+              onClick={openNewModal}
+              className="flex items-center gap-2 px-4 py-2 bg-[var(--color-wa-green)] text-[var(--color-wa-green-text)] text-sm font-semibold rounded-xl hover:bg-[var(--color-wa-green-dark)] transition-colors shadow-sm"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+              </svg>
+              Nueva
+            </button>
+          </div>
+
+          <PullToRefresh onRefresh={fetchData} className="flex-1 flex flex-col overflow-hidden">
+            <div className="flex-1 overflow-y-auto">
+              <div className="px-4 md:px-6 py-4 space-y-3">
+
+                {/* Month nav + stats */}
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={prevMonth}
+                      className="p-1.5 rounded-lg hover:bg-[var(--color-wa-hover)] transition-colors"
+                    >
+                      <svg className="w-4 h-4 text-[var(--color-wa-text-sec)]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+                      </svg>
+                    </button>
+                    <button
+                      onClick={nextMonth}
+                      className="p-1.5 rounded-lg hover:bg-[var(--color-wa-hover)] transition-colors"
+                    >
+                      <svg className="w-4 h-4 text-[var(--color-wa-text-sec)]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                      </svg>
+                    </button>
+                  </div>
+
+                  <div className="flex gap-3 text-xs">
+                    <span className="flex items-center gap-1">
+                      <span className="w-2 h-2 rounded-full bg-amber-400" />
+                      <span className="text-[var(--color-wa-text-sec)]">Pendientes</span>
+                      <span className="font-bold text-[var(--color-wa-text-main)]">{stats.pending}</span>
+                    </span>
+                    <span className="flex items-center gap-1">
+                      <span className="w-2 h-2 rounded-full bg-teal-400" />
+                      <span className="text-[var(--color-wa-text-sec)]">Confirmadas</span>
+                      <span className="font-bold text-[var(--color-wa-text-main)]">{stats.confirmed}</span>
+                    </span>
+                  </div>
+                </div>
+
+                {/* Filter chips: status + mobile discipline */}
+                <div className="flex gap-2 flex-wrap">
+                  {(["all", "pending", "confirmed", "cancelled"] as const).map((f) => (
+                    <button
+                      key={f}
+                      onClick={() => setFilter(f)}
+                      className={`text-xs px-3 py-1.5 rounded-full font-semibold transition-colors ${
+                        filter === f
+                          ? "bg-[var(--color-wa-green)] text-[var(--color-wa-green-text)]"
+                          : "bg-[var(--color-wa-hover)] text-[var(--color-wa-text-sec)] hover:text-[var(--color-wa-text-main)]"
+                      }`}
+                    >
+                      {f === "all" ? "Todas" : STATUS_LABELS[f]}
+                    </button>
+                  ))}
+
+                  {/* Discipline chips — visible only on mobile */}
+                  {services.length > 0 && (
+                    <>
+                      <div className="md:hidden w-px bg-[var(--color-wa-sep)] self-stretch mx-0.5" />
+                      {services.map((s) => (
+                        <button
+                          key={s.id}
+                          onClick={() => setDisciplineFilter(disciplineFilter === s.name ? null : s.name)}
+                          className={`md:hidden text-xs px-3 py-1.5 rounded-full font-semibold transition-colors ${
+                            disciplineFilter === s.name
+                              ? "bg-[var(--color-wa-green)] text-[var(--color-wa-green-text)]"
+                              : "bg-[var(--color-wa-hover)] text-[var(--color-wa-text-sec)] hover:text-[var(--color-wa-text-main)]"
+                          }`}
+                        >
+                          {s.name}
+                        </button>
+                      ))}
+                    </>
+                  )}
+                </div>
+
+                {/* List */}
+                {loading ? (
+                  <div className="space-y-3">
+                    {[1, 2, 3].map((i) => (
+                      <div key={i} className="h-24 rounded-2xl bg-[var(--color-wa-sep)] animate-pulse" />
+                    ))}
+                  </div>
+                ) : filtered.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-16 text-center">
+                    <svg className="w-12 h-12 text-[var(--color-wa-text-sec)] opacity-20 mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    </svg>
+                    <p className="text-base text-[var(--color-wa-text-sec)]">
+                      {disciplineFilter
+                        ? `Sin inscripciones en ${disciplineFilter} este mes`
+                        : "Sin inscripciones este mes"}
+                    </p>
+                    <button
+                      onClick={openNewModal}
+                      className="mt-3 text-sm text-[var(--color-wa-green)] font-semibold hover:underline"
+                    >
+                      + Nueva inscripción
+                    </button>
+                  </div>
+                ) : (
+                  <div className="space-y-3 pb-4">
+                    {filtered.map((e) => (
+                      <EnrollmentCard
+                        key={e.id}
+                        e={e}
+                        onStatusChange={changeStatus}
+                        onDelete={setDeleteId}
+                        onEdit={openEditModal}
+                      />
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </PullToRefresh>
+        </main>
+      </div>
 
       {/* Modal */}
       {showModal && (
