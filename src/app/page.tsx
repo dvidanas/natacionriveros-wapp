@@ -8,6 +8,124 @@ import { ConversationList } from "@/components/ConversationList";
 import { ConversationPanel } from "@/components/ConversationPanel";
 import { PullToRefresh } from "@/components/PullToRefresh";
 
+// ── Modal de conexión WhatsApp ─────────────────────────────────────────────
+interface WAStatus { status: string; phone?: string | null; qr?: string | null; }
+
+function WhatsAppModal({ onClose }: { onClose: () => void }) {
+  const [waStatus, setWaStatus] = useState<WAStatus>({ status: "loading" });
+
+  const fetchStatus = useCallback(() => {
+    fetch("/api/connection/status")
+      .then((r) => r.json())
+      .then(setWaStatus)
+      .catch(() => setWaStatus({ status: "error" }));
+  }, []);
+
+  useEffect(() => {
+    fetchStatus();
+    const t = setInterval(fetchStatus, 3000);
+    return () => clearInterval(t);
+  }, [fetchStatus]);
+
+  useEffect(() => {
+    if (waStatus.status === "open") {
+      const t = setTimeout(onClose, 1500);
+      return () => clearTimeout(t);
+    }
+  }, [waStatus.status, onClose]);
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+    >
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm flex flex-col overflow-hidden">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+          <div>
+            <p className="font-semibold text-gray-800">WhatsApp</p>
+            <p className="text-xs text-gray-400">Natación Riveros</p>
+          </div>
+          <button
+            onClick={onClose}
+            className="w-8 h-8 rounded-full flex items-center justify-center hover:bg-gray-100 text-gray-400 transition-colors"
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+
+        <div className="p-6 flex flex-col items-center gap-4">
+          {waStatus.status === "loading" && (
+            <div className="flex flex-col items-center gap-3 py-6">
+              <div className="w-8 h-8 border-2 border-green-500 border-t-transparent rounded-full animate-spin" />
+              <p className="text-sm text-gray-500">Verificando estado...</p>
+            </div>
+          )}
+
+          {waStatus.status === "open" && (
+            <div className="flex flex-col items-center gap-3 py-6">
+              <div className="w-14 h-14 rounded-full bg-green-100 flex items-center justify-center">
+                <svg className="w-7 h-7 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                </svg>
+              </div>
+              <div className="text-center">
+                <p className="font-medium text-gray-800">Conectado</p>
+                {waStatus.phone && <p className="text-sm text-gray-500">+{waStatus.phone}</p>}
+              </div>
+            </div>
+          )}
+
+          {waStatus.status === "qr" && (
+            <>
+              {waStatus.qr ? (
+                <img src={waStatus.qr} alt="QR de WhatsApp" className="w-56 h-56 rounded-xl border border-gray-100" />
+              ) : (
+                <div className="w-56 h-56 rounded-xl border border-gray-100 bg-gray-50 flex items-center justify-center">
+                  <div className="w-6 h-6 border-2 border-green-500 border-t-transparent rounded-full animate-spin" />
+                </div>
+              )}
+              <div className="text-center space-y-1">
+                <p className="text-sm font-medium text-gray-700">Escaneá con WhatsApp</p>
+                <p className="text-xs text-gray-400">Dispositivos vinculados → Vincular dispositivo</p>
+              </div>
+              <div className="flex items-center gap-2 text-xs text-gray-400">
+                <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
+                Esperando escaneo...
+              </div>
+            </>
+          )}
+
+          {waStatus.status === "connecting" && (
+            <div className="flex flex-col items-center gap-3 py-6">
+              <div className="w-8 h-8 border-2 border-green-500 border-t-transparent rounded-full animate-spin" />
+              <p className="text-sm text-gray-500">Conectando...</p>
+            </div>
+          )}
+
+          {(waStatus.status === "close" || waStatus.status === "error") && (
+            <div className="flex flex-col items-center gap-3 py-6">
+              <div className="w-12 h-12 rounded-full bg-red-100 flex items-center justify-center">
+                <svg className="w-6 h-6 text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </div>
+              <div className="text-center">
+                <p className="font-medium text-gray-700">Sin conexión</p>
+                <p className="text-xs text-gray-400 mt-1">Reconectando automáticamente...</p>
+              </div>
+              <button onClick={fetchStatus} className="text-sm text-green-600 hover:underline">
+                Verificar ahora
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 type ChatFilter = "todos" | "leads" | "sinleer" | "bot";
 const CHAT_FILTERS: { key: ChatFilter; label: string }[] = [
   { key: "todos", label: "Todos" },
@@ -29,6 +147,7 @@ interface Conversation {
 function Dashboard({ connectionStatus }: { connectionStatus: { status: string; phone?: string | null; quality?: string; message?: string } }) {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [chatFilter, setChatFilter] = useState<ChatFilter>("todos");
+  const [showWAModal, setShowWAModal] = useState(false);
   const searchParams = useSearchParams();
   const [selectedId, setSelectedId] = useState<number | null>(() => {
     const id = searchParams.get("id");
@@ -175,9 +294,24 @@ function Dashboard({ connectionStatus }: { connectionStatus: { status: string; p
                   +{connectionStatus.phone}
                 </span>
               )}
-              <div className="flex items-center gap-2">
-                <span className={`w-2.5 h-2.5 rounded-full ${connectionStatus.status === "open" ? "bg-green-500" : "bg-amber-400"}`} />
-              </div>
+              <button
+                onClick={() => setShowWAModal(true)}
+                title={connectionStatus.status === "open" ? "WhatsApp conectado" : "Ver estado de WhatsApp"}
+                className="flex items-center gap-1.5 px-2 py-1 rounded-lg hover:bg-[var(--color-wa-hover)] transition-colors"
+              >
+                <span className={`w-2.5 h-2.5 rounded-full ${
+                  connectionStatus.status === "open"
+                    ? "bg-green-500"
+                    : connectionStatus.status === "qr"
+                    ? "bg-amber-400 animate-pulse"
+                    : "bg-amber-400"
+                }`} />
+                {connectionStatus.status !== "open" && (
+                  <span className="text-xs text-[var(--color-wa-text-sec)]">
+                    {connectionStatus.status === "qr" ? "Escanear QR" : "Desconectado"}
+                  </span>
+                )}
+              </button>
             </div>
 
             <div className="p-2 border-b border-[var(--color-wa-sep)] flex-shrink-0">
@@ -251,6 +385,7 @@ function Dashboard({ connectionStatus }: { connectionStatus: { status: string; p
         </PullToRefresh>
       </div>
       <BottomNav />
+      {showWAModal && <WhatsAppModal onClose={() => setShowWAModal(false)} />}
     </div>
   );
 }
