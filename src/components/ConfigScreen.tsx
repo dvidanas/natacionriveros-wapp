@@ -1,138 +1,91 @@
-import Link from "next/link";
+"use client";
+import { useEffect, useState, useCallback } from "react";
 
 interface Props {
-  missing: string[];
+  onRetry: () => void;
 }
 
-const ENV_DESCRIPTIONS: Record<string, string> = {
-  YCLOUD_API_KEY: "API Key de YCloud",
-  YCLOUD_PHONE_NUMBER: "Número de WhatsApp en formato E.164 (ej: +5491155555555)",
-  GEMINI_API_KEY: "API Key de Google Gemini (AI Studio)",
-};
+export function QRScreen({ onRetry }: Props) {
+  const [qr, setQr] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
 
-export function ConfigScreen({ missing }: Props) {
-  const allRequired = ["YCLOUD_API_KEY", "YCLOUD_PHONE_NUMBER", "GEMINI_API_KEY"];
+  const fetchQR = useCallback(async () => {
+    try {
+      const res = await fetch("/api/connection/qr");
+      if (res.ok) {
+        const data = await res.json();
+        setQr(data.qr ?? null);
+      } else {
+        setQr(null);
+      }
+    } catch {
+      setQr(null);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchQR();
+    const iv = setInterval(() => {
+      onRetry(); // Recheck connection status
+      fetchQR();
+    }, 5000);
+    return () => clearInterval(iv);
+  }, [fetchQR, onRetry]);
 
   return (
-    <div className="min-h-screen bg-gray-50 flex items-start justify-center py-16 px-4">
-      <div className="w-full max-w-2xl">
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
+    <div className="min-h-screen bg-[#111b21] flex items-center justify-center px-4">
+      <div className="w-full max-w-sm">
+        <div className="bg-[#202c33] rounded-2xl overflow-hidden shadow-xl border border-[#2a3942]">
           {/* Header */}
-          <div className="bg-amber-50 border-b border-amber-100 px-6 py-5">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center">
-                <svg
-                  className="w-5 h-5 text-amber-600"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                  strokeWidth={2}
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
-                  />
-                </svg>
-              </div>
-              <div>
-                <h2 className="text-base font-semibold text-gray-900">
-                  Configuración incompleta
-                </h2>
-                <p className="text-sm text-gray-600">
-                  Faltan variables de entorno para iniciar el sistema.
-                </p>
-              </div>
+          <div className="px-6 pt-6 pb-4 text-center">
+            <div className="w-12 h-12 rounded-full bg-[#00a884]/15 flex items-center justify-center mx-auto mb-3">
+              <svg className="w-6 h-6 text-[#00a884]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 6.75c0 8.284 6.716 15 15 15h2.25a2.25 2.25 0 002.25-2.25v-1.372c0-.516-.351-.966-.852-1.091l-4.423-1.106c-.44-.11-.902.055-1.173.417l-.97 1.293c-.282.376-.769.542-1.21.38a12.035 12.035 0 01-7.143-7.143c-.162-.441.004-.928.38-1.21l1.293-.97c.363-.271.527-.734.417-1.173L6.963 3.102a1.125 1.125 0 00-1.091-.852H4.5A2.25 2.25 0 002.25 4.5v2.25z" />
+              </svg>
             </div>
+            <h2 className="text-base font-semibold text-white">Conectar WhatsApp</h2>
+            <p className="text-sm text-[#8696a0] mt-1">
+              Escaneá el QR con tu teléfono
+            </p>
           </div>
 
-          <div className="px-6 py-6 space-y-6">
-            {/* Estado de variables */}
-            <div>
-              <h3 className="text-sm font-semibold text-gray-700 mb-3">
-                Variables de entorno
-              </h3>
-              <ul className="space-y-2">
-                {allRequired.map((key) => {
-                  const ok = !missing.includes(key);
-                  return (
-                    <li
-                      key={key}
-                      className="flex items-start gap-3 p-3 rounded-lg bg-gray-50"
-                    >
-                      <span
-                        className={`mt-0.5 flex-shrink-0 text-sm ${
-                          ok ? "text-emerald-500" : "text-red-500"
-                        }`}
-                      >
-                        {ok ? "✓" : "✗"}
-                      </span>
-                      <div>
-                        <code className="text-sm font-mono font-medium text-gray-800">
-                          {key}
-                        </code>
-                        <p className="text-xs text-gray-500 mt-0.5">
-                          {ENV_DESCRIPTIONS[key]}
-                        </p>
-                      </div>
-                    </li>
-                  );
-                })}
-              </ul>
+          {/* QR */}
+          <div className="px-6 pb-6">
+            <div className="bg-white rounded-xl p-4 flex items-center justify-center aspect-square">
+              {loading ? (
+                <div className="text-sm text-gray-400">Cargando QR…</div>
+              ) : qr ? (
+                <img src={qr} alt="QR WhatsApp" className="w-full h-full object-contain" />
+              ) : (
+                <div className="text-center">
+                  <p className="text-sm text-gray-500 mb-2">QR no disponible</p>
+                  <p className="text-xs text-gray-400">Esperando al servidor…</p>
+                </div>
+              )}
             </div>
 
-            {/* URL Webhook */}
-            <div>
-              <h3 className="text-sm font-semibold text-gray-700 mb-2">
-                URL del Webhook
-              </h3>
-              <div className="flex items-center gap-2 p-3 bg-gray-50 rounded-lg border border-gray-200">
-                <code className="text-sm text-gray-700 flex-1 break-all">
-                  https://TU_DOMINIO/api/webhook
-                </code>
-              </div>
-              <p className="text-xs text-gray-500 mt-1">
-                Reemplazá TU_DOMINIO por el dominio asignado en EasyPanel.
-              </p>
-            </div>
-
-            {/* Pasos */}
-            <div>
-              <h3 className="text-sm font-semibold text-gray-700 mb-3">
-                Pasos para configurar
-              </h3>
-              <ol className="space-y-2 text-sm text-gray-600">
-                {[
-                  "Crear cuenta en ycloud.com",
-                  "Registrar número de WhatsApp Business.",
-                  "Settings → API Keys → copiar YCLOUD_API_KEY.",
-                  "Copiar número como YCLOUD_PHONE_NUMBER (E.164 con +).",
-                  "YCloud → Webhooks → pegar la URL del webhook de arriba.",
-                  "Suscribir al evento whatsapp.inbound_message.received.",
-                  "Obtener GEMINI_API_KEY desde aistudio.google.com",
-                  "Configurar las variables en EasyPanel → Environment → reiniciar.",
-                ].map((step, i) => (
-                  <li key={i} className="flex items-start gap-2">
-                    <span className="flex-shrink-0 w-5 h-5 rounded-full bg-gray-200 text-gray-600 text-xs flex items-center justify-center font-medium">
-                      {i + 1}
-                    </span>
-                    <span>{step}</span>
-                  </li>
-                ))}
-              </ol>
-            </div>
-            {/* Acceso al dashboard */}
-            <div className="pt-2 border-t border-gray-100">
-              <Link
-                href="/"
-                className="flex items-center justify-center gap-2 w-full py-2.5 px-4 rounded-lg bg-gray-900 hover:bg-gray-700 text-white text-sm font-medium transition-colors"
-              >
-                Ir al dashboard
-              </Link>
-            </div>
-
+            <ol className="mt-4 space-y-2 text-sm text-[#8696a0]">
+              <li className="flex items-start gap-2">
+                <span className="flex-shrink-0 w-5 h-5 rounded-full bg-[#2a3942] text-[#00a884] text-xs flex items-center justify-center font-semibold">1</span>
+                <span>Abrí WhatsApp en tu teléfono</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <span className="flex-shrink-0 w-5 h-5 rounded-full bg-[#2a3942] text-[#00a884] text-xs flex items-center justify-center font-semibold">2</span>
+                <span>Menú → Dispositivos vinculados → Vincular dispositivo</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <span className="flex-shrink-0 w-5 h-5 rounded-full bg-[#2a3942] text-[#00a884] text-xs flex items-center justify-center font-semibold">3</span>
+                <span>Apuntá la cámara al QR de arriba</span>
+              </li>
+            </ol>
           </div>
         </div>
+
+        <p className="text-center text-xs text-[#8696a0] mt-4">
+          El QR se actualiza automáticamente cada 30 segundos
+        </p>
       </div>
     </div>
   );

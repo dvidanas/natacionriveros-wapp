@@ -5,7 +5,7 @@ import {
   insertMessage,
   updateMessageWaId,
 } from "@/lib/db";
-import { sendTextMessage } from "@/lib/ycloud/client";
+import { sendTextMessage } from "@/lib/baileys/client";
 
 export const dynamic = "force-dynamic";
 
@@ -51,11 +51,8 @@ export async function POST(req: NextRequest, { params }: Ctx) {
     return NextResponse.json({ ok: true, messageId });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
-    const is24hError =
-      message.includes("131047") ||
-      message.toLowerCase().includes("24");
     return NextResponse.json(
-      { ok: false, messageId, error: message, is24hError },
+      { ok: false, messageId, error: message },
       { status: 502 }
     );
   }

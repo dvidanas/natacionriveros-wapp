@@ -28,8 +28,9 @@ const INTENT_KEYWORDS = [
   "presupuesto", "precio", "cuánto", "cuanto", "contratar", "contrataría",
   "quiero", "necesito", "me interesa", "interesado", "interesada",
   "cotizar", "cotización", "consulta", "información", "info",
-  "servicio", "servicios", "página web", "pagina web", "bot", "sistema",
-  "reunión", "reunion", "hablar", "llamar",
+  "servicio", "servicios", "inscribir", "inscripción", "inscribirme",
+  "turno", "clase", "clases", "disciplina", "natación", "natacion",
+  "cupo", "cupos", "disponible", "disponibilidad",
 ];
 
 const NOT_A_NAME = [
@@ -45,7 +46,6 @@ const NAME_ASK_KEYWORDS = [
   "nombre", "llamás", "llamas", "identificarte", "cómo te", "como te",
 ];
 
-// Timers de debounce por conversation_id
 const pendingResponses = new Map<number, ReturnType<typeof setTimeout>>();
 
 function hasLeadIntent(text: string): boolean {
@@ -53,7 +53,6 @@ function hasLeadIntent(text: string): boolean {
   return INTENT_KEYWORDS.some((kw) => lower.includes(kw));
 }
 
-// Mensaje con contenido real: no es un saludo/aceptación de una sola palabra
 function isEngagedMessage(text: string): boolean {
   const t = text.trim().toLowerCase();
   if (NOT_A_NAME.includes(t)) return false;
@@ -83,14 +82,12 @@ function looksLikeName(text: string, lastBotMessage: string | null): boolean {
 async function sendDebouncedReply(convoId: number, phone: string): Promise<void> {
   pendingResponses.delete(convoId);
 
-  // Re-leer modo por si cambió mientras esperábamos
   const fresh = getConversationById(convoId);
   if (!fresh || fresh.mode !== "AI") {
-    console.log(`[wh] modo ${fresh?.mode ?? "?"} — sin respuesta automática`);
+    console.log(`[baileys] modo ${fresh?.mode ?? "?"} — sin respuesta automática`);
     return;
   }
 
-  // Re-leer historial completo (pueden haber llegado mensajes nuevos)
   const history = getRecentHistory(convoId, 20);
   const chatHistory: ChatMessage[] = history.map((m) => ({
     role: m.role === "user" ? "user" : "assistant",
@@ -103,7 +100,6 @@ async function sendDebouncedReply(convoId: number, phone: string): Promise<void>
 
   const isFirstBotMessage = !history.some((m) => m.role === "assistant");
 
-  // Disponibilidad de turnos si está habilitado
   const apptConfig = (clientConfig as Record<string, unknown>).appointments as
     | { enabled: boolean; defaultDuration: number }
     | undefined;
@@ -129,57 +125,51 @@ async function sendDebouncedReply(convoId: number, phone: string): Promise<void>
 
   const firstMsgInstruction = isFirstBotMessage
     ? "Es tu PRIMER mensaje en esta conversación. " +
-      "Saludá, presentá brevemente a Feer en una sola oración (ej: somos una agencia digital que ayuda a negocios a crecer usando tecnología e IA), " +
-      "y preguntá qué tipo de servicio está buscando. " +
+      "Saludá, presentá brevemente el complejo de natación en una sola oración, " +
+      "y preguntá en qué disciplina o servicio está interesado. " +
       "Todo en un único mensaje corto y directo, sin listas ni saltos de línea."
     : undefined;
 
   const contactInstruction =
     engagedCount >= 4
       ? "El usuario ya respondió varias preguntas y hay contexto suficiente. " +
-        "Es el momento de proponer que alguien del equipo lo contacte. " +
-        "Cerrá tu respuesta con algo como '¿Querés que alguien del equipo te contacte para charlar unos minutos?' " +
-        "o '¿Te parece si coordinamos una charla rápida con alguien del equipo?'" +
+        "Es el momento de avanzar con la inscripción o coordinar directamente." +
         availabilityNote
       : availabilityNote || undefined;
 
-  const extraInstruction = [firstMsgInstruction, contactInstruction].filter(Boolean).join(" ") || undefined;
+  const extraInstruction =
+    [firstMsgInstruction, contactInstruction].filter(Boolean).join(" ") || undefined;
 
-  const t0 = Date.now();
   let rawReply: string;
   try {
     rawReply = await getChatCompletion(chatHistory, extraInstruction);
   } catch (err) {
-    console.error(`[wh] error llamando a Gemini para +${phone}:`, err);
+    console.error(`[baileys] error Gemini para +${phone}:`, err);
     return;
   }
-  console.log(`[wh] LLM en ${Date.now() - t0}ms`);
 
   if (!rawReply) {
-    console.warn("[wh] Gemini devolvió respuesta vacía");
+    console.warn("[baileys] Gemini devolvió respuesta vacía");
     return;
   }
 
   const reply = rawReply.replace(/\n+/g, " ").trim();
-
   const messageId = insertMessage(convoId, "assistant", reply, null);
 
   try {
     const { wa_message_id } = await sendTextMessage(phone, reply);
     updateMessageWaId(messageId, wa_message_id);
-    console.log(`[wh] → enviado a +${phone}`);
+    console.log(`[baileys] → enviado a +${phone}`);
   } catch (err) {
-    console.error(`[wh] error al enviar a +${phone}:`, err);
+    console.error(`[baileys] error al enviar a +${phone}:`, err);
   }
 
-  // Intentar detectar si el usuario confirmó un turno (slot-based)
   if (apptConfig?.enabled && offeredSlots.length > 0) {
     tryBookAppointmentFromChat(convoId, phone, history, offeredSlots, apptConfig.defaultDuration ?? 30).catch(
       (err) => console.error("[appt] error en tryBookAppointmentFromChat:", err)
     );
   }
 
-  // Intentar detectar inscripción en disciplina de natación
   tryEnrollStudentFromChat(convoId, phone, history, reply).catch(
     (err) => console.error("[enroll] error en tryEnrollStudentFromChat:", err)
   );
@@ -210,44 +200,27 @@ ${conversation}
 Si el usuario eligió o confirmó un turno concreto de la lista, respondé ÚNICAMENTE con este JSON (sin markdown):
 {"date":"YYYY-MM-DD","time_start":"HH:MM"}
 
-Si NO eligió ninguno todavía (solo pregunta, duda, o habla de otra cosa), respondé ÚNICAMENTE con:
+Si NO eligió ninguno todavía, respondé ÚNICAMENTE con:
 null`;
 
   let raw: string;
-  try {
-    raw = await getRawCompletion(prompt);
-  } catch (err) {
-    console.error("[appt] error en extracción de turno:", err);
-    return;
-  }
+  try { raw = await getRawCompletion(prompt); } catch { return; }
 
   const clean = raw.trim().replace(/```json|```/g, "").trim();
   if (clean === "null" || !clean.startsWith("{")) return;
 
   let parsed: { date?: string; time_start?: string };
-  try {
-    parsed = JSON.parse(clean);
-  } catch {
-    return;
-  }
+  try { parsed = JSON.parse(clean); } catch { return; }
 
   const { date, time_start } = parsed;
   if (!date || !time_start) return;
 
-  // Verificar que el slot sigue disponible en DB (no solo en la lista ofrecida)
   const stillAvailable = getAvailableSlots(date, defaultDuration).some(
     (s) => s.time_start === time_start
   );
-  if (!stillAvailable) {
-    console.log(`[appt] slot ${date} ${time_start} ya no está disponible, ignorando`);
-    return;
-  }
+  if (!stillAvailable) return;
 
-  // Evitar duplicado para esta conversación
-  if (hasAppointmentForSlot(convoId, date, time_start)) {
-    console.log(`[appt] ya existe turno para conversación ${convoId} en ${date} ${time_start}`);
-    return;
-  }
+  if (hasAppointmentForSlot(convoId, date, time_start)) return;
 
   const lead = getLeadByConversationId(convoId);
   const validSlot = offeredSlots.find((s) => s.date === date && s.time_start === time_start);
@@ -273,7 +246,6 @@ async function tryEnrollStudentFromChat(
   history: { role: string; content: string }[],
   lastBotReply: string
 ): Promise<void> {
-  // Solo actuar cuando el bot acaba de enviar datos de pago (señal de que llegó al Paso 4)
   if (!lastBotReply.includes("NatacionRiveros") && !lastBotReply.includes("PENDIENTE")) return;
 
   const services = listServicesWithEnrollment();
@@ -298,42 +270,25 @@ Si NO hay confirmación de inscripción con nombre de alumno, respondé ÚNICAME
 null`;
 
   let raw: string;
-  try {
-    raw = await getRawCompletion(prompt);
-  } catch (err) {
-    console.error("[enroll] error en extracción:", err);
-    return;
-  }
+  try { raw = await getRawCompletion(prompt); } catch { return; }
 
   const clean = raw.trim().replace(/```json|```/g, "").trim();
   if (clean === "null" || !clean.startsWith("{")) return;
 
   let parsed: { discipline?: string; student_name?: string };
-  try {
-    parsed = JSON.parse(clean);
-  } catch {
-    return;
-  }
+  try { parsed = JSON.parse(clean); } catch { return; }
 
   const { discipline, student_name } = parsed;
   if (!discipline || !student_name) return;
 
-  // Verificar que la disciplina existe y tiene cupo
   const svc = services.find((s) => s.name.toLowerCase() === discipline.toLowerCase());
-  if (!svc) {
-    console.log(`[enroll] disciplina "${discipline}" no encontrada en DB`);
-    return;
-  }
+  if (!svc) return;
   if (svc.enrolled >= svc.capacity) {
     console.log(`[enroll] disciplina "${svc.name}" sin cupo (${svc.enrolled}/${svc.capacity})`);
     return;
   }
 
-  // Evitar duplicado para esta conversación + disciplina
-  if (hasEnrollmentForConversation(convoId, svc.name)) {
-    console.log(`[enroll] ya existe inscripción para conv ${convoId} en "${svc.name}"`);
-    return;
-  }
+  if (hasEnrollmentForConversation(convoId, svc.name)) return;
 
   const today = new Date().toISOString().slice(0, 10);
   const id = createAppointment({
@@ -351,79 +306,44 @@ null`;
   console.log(`[enroll] inscripción PENDIENTE creada id=${id} — "${svc.name}" para ${student_name} (+${phone})`);
 }
 
-export async function processWebhookPayload(payload: unknown): Promise<void> {
-  const p = payload as Record<string, unknown>;
-  const type = p?.type;
+// ── Entry point llamado por Baileys client ──────────────────
 
-  if (type === "whatsapp.message.updated") {
-    console.log("[webhook] status update, ignorando");
-    return;
-  }
-
-  if (type === "whatsapp.inbound_message.received") {
-    const msg = p?.whatsappInboundMessage as Record<string, unknown> | undefined;
-    if (msg) await handleIncomingMessage(msg);
-    return;
-  }
-
-  console.log(`[webhook] evento no manejado: ${type}`);
-}
-
-async function handleIncomingMessage(
-  msg: Record<string, unknown>
+export async function handleIncomingMessage(
+  phone: string,
+  text: string,
+  name: string | null,
+  msgId: string
 ): Promise<void> {
-  // 1. Solo mensajes de texto
-  if (msg.type !== "text") {
-    console.log(`[wh] tipo no soportado: ${msg.type}, ignorando`);
+  // 1. Deduplicación
+  if (wasMessageProcessed(msgId)) {
+    console.log(`[baileys] duplicado ${msgId}, ignorando`);
     return;
   }
+  markMessageProcessed(msgId);
 
-  const waId = msg.id as string;
-  const text = (msg.text as Record<string, string>)?.body;
-  const rawPhone = msg.from as string;
-  const senderName = (msg.senderName as string) ?? null;
+  console.log(`[baileys] ← de +${phone}: "${text.slice(0, 60)}"`);
 
-  if (!waId || !text || !rawPhone) {
-    console.warn("[wh] mensaje incompleto, ignorando", msg);
-    return;
-  }
+  // 2. Conversación
+  const convo = getOrCreateConversation(phone, name);
 
-  // 2. Deduplicación
-  if (wasMessageProcessed(waId)) {
-    console.log(`[wh] duplicado ${waId}, ignorando`);
-    return;
-  }
+  // 3. Guardar mensaje
+  insertMessage(convo.id, "user", text, msgId);
 
-  // 3. Marcar procesado ANTES de continuar
-  markMessageProcessed(waId);
-
-  // 4. Normalizar teléfono (sin '+')
-  const phone = rawPhone.startsWith("+") ? rawPhone.slice(1) : rawPhone;
-
-  console.log(`[wh] ← de +${phone}: "${text.slice(0, 60)}"`);
-
-  // 5. Conversación
-  const convo = getOrCreateConversation(phone, senderName);
-
-  // 6. Guardar mensaje del usuario
-  insertMessage(convo.id, "user", text, waId);
-
-  // 7. Obtener historial (incluye el mensaje recién insertado)
   const history = getRecentHistory(convo.id, 20);
   const lastBotMessage =
     [...history].reverse().find((m) => m.role === "assistant")?.content ?? null;
 
-  // 8. Captura de lead por intención real
+  // 4. Captura de lead por intención
   if (!convo.has_lead && hasLeadIntent(text)) {
     const existingLead = getLeadByConversationId(convo.id);
     if (!existingLead) {
       createLead(convo.id, convo.phone, convo.name);
       setConversationHasLead(convo.id, 1);
-      console.log(`[lead] capturado por intención de +${phone} (${convo.name ?? "sin nombre"})`);
+      console.log(`[lead] capturado por intención de +${phone}`);
     }
   }
 
-  // 9. Si ya hay lead y el mensaje parece un nombre, actualizar
+  // 5. Actualizar nombre del lead si corresponde
   if (convo.has_lead && looksLikeName(text, lastBotMessage)) {
     const lead = getLeadByConversationId(convo.id);
     if (lead && !isRealName(lead.name)) {
@@ -432,21 +352,20 @@ async function handleIncomingMessage(
     }
   }
 
-  // 10. Verificar modo AI antes de programar respuesta
+  // 6. Verificar modo
   const fresh = getConversationById(convo.id);
   if (!fresh || fresh.mode !== "AI") {
-    console.log(`[wh] modo ${fresh?.mode ?? "?"} — sin respuesta automática`);
+    console.log(`[baileys] modo ${fresh?.mode ?? "?"} — sin respuesta automática`);
     return;
   }
 
-  // 11. Debounce: cancelar timer anterior y programar uno nuevo
+  // 7. Debounce
   const existing = pendingResponses.get(convo.id);
   if (existing) {
     clearTimeout(existing);
-    console.log(`[wh] timer reiniciado para +${phone}`);
+    console.log(`[baileys] timer reiniciado para +${phone}`);
   }
 
-  // Primera respuesta del bot: delay corto para no parecer ignorado
   const hasPriorBotMessage = history.some((m) => m.role === "assistant");
   const delay = hasPriorBotMessage ? DELAY : Math.min(DELAY, 2000);
 
@@ -454,10 +373,10 @@ async function handleIncomingMessage(
     convo.id,
     setTimeout(() => {
       sendDebouncedReply(convo.id, phone).catch((err) =>
-        console.error(`[wh] error en sendDebouncedReply para +${phone}:`, err)
+        console.error(`[baileys] error en sendDebouncedReply para +${phone}:`, err)
       );
     }, delay)
   );
 
-  console.log(`[wh] respuesta programada en ${delay}ms para +${phone}`);
+  console.log(`[baileys] respuesta programada en ${delay}ms para +${phone}`);
 }

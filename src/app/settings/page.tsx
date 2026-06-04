@@ -32,7 +32,13 @@ interface AvailabilitySlot {
   time_end: string;
 }
 
-type Tab = "apariencia" | "negocio" | "servicios" | "empleados";
+interface BackupInfo {
+  filename: string;
+  createdAt: string;
+  sizeBytes: number;
+}
+
+type Tab = "whatsapp" | "backup" | "apariencia" | "negocio" | "servicios" | "empleados";
 
 const DAYS = ["Dom", "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"];
 const DAYS_FULL = ["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"];
@@ -62,6 +68,262 @@ function SaveButton({ loading, onClick }: { loading: boolean; onClick: () => voi
     >
       {loading ? "Guardando…" : "Guardar"}
     </button>
+  );
+}
+
+// ── Tab: WhatsApp ──────────────────────────────────────────────────────────────
+
+function TabWhatsApp() {
+  const [conn, setConn] = useState<{ status: string; phone?: string | null; qr?: string | null } | null>(null);
+  const [qrImg, setQrImg] = useState<string | null>(null);
+  const [logging, setLogging] = useState(false);
+
+  const loadStatus = useCallback(async () => {
+    const res = await fetch("/api/connection/status").then((r) => r.json()).catch(() => null);
+    setConn(res);
+    if (res?.status === "qr") {
+      const qRes = await fetch("/api/connection/qr").then((r) => r.json()).catch(() => null);
+      setQrImg(qRes?.qr ?? null);
+    } else {
+      setQrImg(null);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadStatus();
+    const iv = setInterval(loadStatus, 5000);
+    return () => clearInterval(iv);
+  }, [loadStatus]);
+
+  const disconnect = async () => {
+    if (!confirm("¿Desconectar WhatsApp? Tendrás que escanear el QR de nuevo.")) return;
+    setLogging(true);
+    await fetch("/api/connection/logout", { method: "POST" });
+    setLogging(false);
+    loadStatus();
+  };
+
+  const statusLabel = {
+    open: { text: "Conectado", color: "bg-[var(--color-wa-green)]/15 text-[var(--color-wa-green)]" },
+    qr: { text: "Esperando QR", color: "bg-amber-500/15 text-amber-500" },
+    connecting: { text: "Conectando…", color: "bg-[var(--color-wa-sep)] text-[var(--color-wa-text-sec)]" },
+    close: { text: "Desconectado", color: "bg-red-500/15 text-red-500" },
+  }[conn?.status ?? "connecting"] ?? { text: "Desconocido", color: "bg-[var(--color-wa-sep)] text-[var(--color-wa-text-sec)]" };
+
+  return (
+    <div className="flex flex-col gap-4">
+      <Section title="Estado de la conexión">
+        <div className="flex flex-col gap-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-base font-medium text-[var(--color-wa-text-main)]">WhatsApp</p>
+              {conn?.status === "open" && conn.phone && (
+                <p className="text-sm text-[var(--color-wa-text-sec)] mt-0.5">+{conn.phone}</p>
+              )}
+            </div>
+            <span className={`px-2.5 py-1 text-xs font-semibold rounded-full ${statusLabel.color}`}>
+              {statusLabel.text}
+            </span>
+          </div>
+
+          {conn?.status === "open" && (
+            <button
+              onClick={disconnect}
+              disabled={logging}
+              className="self-start px-4 py-2 text-sm font-medium text-red-500 border border-red-500/30 rounded-xl hover:bg-red-500/10 transition-colors disabled:opacity-50"
+            >
+              {logging ? "Desconectando…" : "Desconectar"}
+            </button>
+          )}
+        </div>
+      </Section>
+
+      {conn?.status === "qr" && (
+        <Section title="Escanear QR">
+          <div className="flex flex-col items-center gap-4">
+            <div className="bg-white rounded-xl p-3 w-56 h-56 flex items-center justify-center">
+              {qrImg
+                ? <img src={qrImg} alt="QR WhatsApp" className="w-full h-full object-contain" />
+                : <p className="text-sm text-gray-400">Cargando…</p>
+              }
+            </div>
+            <ol className="space-y-1 text-sm text-[var(--color-wa-text-sec)] w-full">
+              <li>1. Abrí WhatsApp en tu teléfono</li>
+              <li>2. Menú → Dispositivos vinculados → Vincular dispositivo</li>
+              <li>3. Apuntá la cámara al QR</li>
+            </ol>
+          </div>
+        </Section>
+      )}
+
+      {(conn?.status === "connecting" || conn?.status === "close") && (
+        <Section title="Reconectando">
+          <div className="flex items-center gap-3">
+            <div className="w-4 h-4 border-2 border-[var(--color-wa-green)] border-t-transparent rounded-full animate-spin flex-shrink-0" />
+            <p className="text-sm text-[var(--color-wa-text-sec)]">
+              {conn.status === "connecting" ? "Iniciando conexión con WhatsApp…" : "Reconectando…"}
+            </p>
+          </div>
+        </Section>
+      )}
+    </div>
+  );
+}
+
+// ── Tab: Backup ────────────────────────────────────────────────────────────────
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+}
+
+function formatDate(iso: string): string {
+  return new Date(iso).toLocaleString("es-AR", {
+    day: "2-digit", month: "2-digit", year: "numeric",
+    hour: "2-digit", minute: "2-digit",
+  });
+}
+
+function TabBackup() {
+  const [backups, setBackups] = useState<BackupInfo[]>([]);
+  const [driveConfigured, setDriveConfigured] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [running, setRunning] = useState(false);
+  const [lastResult, setLastResult] = useState<{ ok: boolean; msg: string } | null>(null);
+
+  const load = useCallback(() => {
+    fetch("/api/backup")
+      .then((r) => r.json())
+      .then((data) => {
+        setBackups(data.backups ?? []);
+        setDriveConfigured(data.driveConfigured ?? false);
+      })
+      .finally(() => setLoading(false));
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  const triggerBackup = async () => {
+    setRunning(true);
+    setLastResult(null);
+    const res = await fetch("/api/backup", { method: "POST" });
+    const data = await res.json();
+    if (data.ok) {
+      setLastResult({
+        ok: true,
+        msg: `Backup creado: ${data.filename}${data.driveFileId ? " · subido a Google Drive" : ""}`,
+      });
+      load();
+    } else {
+      setLastResult({ ok: false, msg: data.error ?? "Error desconocido" });
+    }
+    setRunning(false);
+  };
+
+  const download = (filename: string) => {
+    window.open(`/api/backup?file=${encodeURIComponent(filename)}`, "_blank");
+  };
+
+  if (loading) return <div className="text-sm text-[var(--color-wa-text-sec)]">Cargando…</div>;
+
+  return (
+    <div className="flex flex-col gap-4">
+      <Section title="Estado del backup">
+        <div className="flex flex-col gap-3">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-base font-medium text-[var(--color-wa-text-main)]">Backup automático</p>
+              <p className="text-sm text-[var(--color-wa-text-sec)] mt-0.5">Se ejecuta cada 24 h al arrancar el servidor</p>
+            </div>
+            <span className="px-2.5 py-1 text-xs font-semibold rounded-full bg-[var(--color-wa-green)]/15 text-[var(--color-wa-green)]">Activo</span>
+          </div>
+
+          <div className="flex items-center justify-between pt-2 border-t border-[var(--color-wa-sep)]">
+            <div>
+              <p className="text-base font-medium text-[var(--color-wa-text-main)]">Google Drive</p>
+              <p className="text-sm text-[var(--color-wa-text-sec)] mt-0.5">
+                {driveConfigured ? "Configurado — backups se suben automáticamente" : "No configurado — solo backups locales"}
+              </p>
+            </div>
+            <span className={`px-2.5 py-1 text-xs font-semibold rounded-full ${driveConfigured ? "bg-[var(--color-wa-green)]/15 text-[var(--color-wa-green)]" : "bg-[var(--color-wa-sep)] text-[var(--color-wa-text-sec)]"}`}>
+              {driveConfigured ? "Conectado" : "Sin configurar"}
+            </span>
+          </div>
+
+          {backups[0] && (
+            <div className="flex items-center justify-between pt-2 border-t border-[var(--color-wa-sep)]">
+              <div>
+                <p className="text-sm font-medium text-[var(--color-wa-text-main)]">Último backup</p>
+                <p className="text-sm text-[var(--color-wa-text-sec)] mt-0.5">{formatDate(backups[0].createdAt)} · {formatBytes(backups[0].sizeBytes)}</p>
+              </div>
+              <button
+                onClick={() => download(backups[0].filename)}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-[var(--color-wa-text-sec)] hover:text-[var(--color-wa-text-main)] hover:bg-[var(--color-wa-hover)] rounded-lg transition-colors"
+              >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                </svg>
+                Descargar
+              </button>
+            </div>
+          )}
+        </div>
+      </Section>
+
+      <Section title="Backup manual">
+        <div className="flex flex-col gap-3">
+          <p className="text-sm text-[var(--color-wa-text-sec)]">
+            Creá un backup ahora mismo. Se guardará en el servidor y, si Google Drive está configurado, también se subirá.
+          </p>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={triggerBackup}
+              disabled={running}
+              className="px-5 py-2.5 bg-[var(--color-wa-green)] text-[var(--color-wa-green-text)] text-sm font-semibold rounded-xl hover:bg-[var(--color-wa-green-dark)] active:scale-95 disabled:opacity-50 transition-all duration-150 shadow-sm"
+            >
+              {running ? "Creando backup…" : "Crear backup ahora"}
+            </button>
+          </div>
+          {lastResult && (
+            <p className={`text-sm ${lastResult.ok ? "text-[var(--color-wa-green)]" : "text-red-500"}`}>
+              {lastResult.ok ? "✓ " : "✗ "}{lastResult.msg}
+            </p>
+          )}
+        </div>
+      </Section>
+
+      {backups.length > 0 && (
+        <Section title={`Backups guardados (${backups.length})`}>
+          <ul className="flex flex-col gap-1">
+            {backups.map((b) => (
+              <li key={b.filename} className="flex items-center justify-between gap-3 py-2 border-b border-[var(--color-wa-sep)] last:border-0">
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-[var(--color-wa-text-main)] truncate">{formatDate(b.createdAt)}</p>
+                  <p className="text-xs text-[var(--color-wa-text-sec)]">{formatBytes(b.sizeBytes)}</p>
+                </div>
+                <button
+                  onClick={() => download(b.filename)}
+                  title="Descargar"
+                  className="p-1.5 rounded hover:bg-[var(--color-wa-hover)] text-[var(--color-wa-text-sec)] flex-shrink-0"
+                >
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                  </svg>
+                </button>
+              </li>
+            ))}
+          </ul>
+          <p className="text-xs text-[var(--color-wa-text-sec)] mt-3">Se guardan los últimos 30 backups.</p>
+        </Section>
+      )}
+
+      {backups.length === 0 && (
+        <div className="text-center py-8 text-[var(--color-wa-text-sec)] text-sm">
+          Todavía no hay backups. El primero se creará automáticamente a los 2 minutos de arrancar.
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -176,7 +438,7 @@ function TabNegocio() {
 
 // ── Tab: Servicios ────────────────────────────────────────────────────────────
 
-const EMPTY_SERVICE = { name: "", description: "", price: "", duration_minutes: 30 };
+const EMPTY_SERVICE = { name: "", description: "", price: "", duration_minutes: 60 };
 
 function TabServicios() {
   const [services, setServices] = useState<Service[]>([]);
@@ -241,8 +503,7 @@ function TabServicios() {
 
   return (
     <div className="flex flex-col gap-4">
-      {/* Form */}
-      <Section title={editId !== null ? "Editar servicio" : "Nuevo servicio"}>
+      <Section title={editId !== null ? "Editar disciplina" : "Nueva disciplina"}>
         <div className="flex flex-col gap-3">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
@@ -251,7 +512,7 @@ function TabServicios() {
                 value={form.name}
                 onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))}
                 className="w-full bg-[var(--color-wa-bg-main)] border border-[var(--color-wa-sep)] rounded-xl px-3 py-2.5 text-sm text-[var(--color-wa-text-main)] outline-none focus:border-[var(--color-wa-green)] focus:ring-2 focus:ring-[var(--color-wa-green)]/20 transition-colors"
-                placeholder="Ej: Consulta inicial"
+                placeholder="Ej: Natación para Niños"
               />
             </div>
             <div>
@@ -260,7 +521,7 @@ function TabServicios() {
                 value={form.price}
                 onChange={(e) => setForm((p) => ({ ...p, price: e.target.value }))}
                 className="w-full bg-[var(--color-wa-bg-main)] border border-[var(--color-wa-sep)] rounded-xl px-3 py-2.5 text-sm text-[var(--color-wa-text-main)] outline-none focus:border-[var(--color-wa-green)] focus:ring-2 focus:ring-[var(--color-wa-green)]/20 transition-colors"
-                placeholder="Ej: $5.000 o Consultar"
+                placeholder="Ej: $45.000"
               />
             </div>
           </div>
@@ -271,7 +532,7 @@ function TabServicios() {
                 value={form.description}
                 onChange={(e) => setForm((p) => ({ ...p, description: e.target.value }))}
                 className="w-full bg-[var(--color-wa-bg-main)] border border-[var(--color-wa-sep)] rounded-xl px-3 py-2.5 text-sm text-[var(--color-wa-text-main)] outline-none focus:border-[var(--color-wa-green)] focus:ring-2 focus:ring-[var(--color-wa-green)]/20 transition-colors"
-                placeholder="Descripción breve"
+                placeholder="Horario, profesor, días"
               />
             </div>
             <div>
@@ -297,35 +558,24 @@ function TabServicios() {
         </div>
       </Section>
 
-      {/* List */}
       {services.length > 0 && (
-        <Section title={`Servicios (${services.length})`}>
+        <Section title={`Disciplinas (${services.length})`}>
           <ul className="flex flex-col gap-2">
             {services.map((s) => (
               <li key={s.id} className={`flex items-center gap-3 p-3 rounded-lg border ${s.active ? "border-[var(--color-wa-sep)]" : "border-dashed border-[var(--color-wa-sep)] opacity-50"}`}>
                 <div className="flex-1 min-w-0">
                   <p className="text-base font-medium text-[var(--color-wa-text-main)] truncate">{s.name}</p>
-                  <div className="flex items-center gap-2 mt-0.5">
+                  <div className="flex items-center gap-2 mt-0.5 flex-wrap">
                     {s.price && <span className="text-sm text-[var(--color-wa-green)] font-medium">{s.price}</span>}
                     {s.description && <span className="text-sm text-[var(--color-wa-text-sec)] truncate">{s.description}</span>}
                     <span className="text-xs text-[var(--color-wa-text-sec)]">{s.duration_minutes} min</span>
                   </div>
                 </div>
                 <div className="flex items-center gap-1 flex-shrink-0">
-                  <button
-                    onClick={() => startEdit(s)}
-                    className="p-1.5 rounded hover:bg-[var(--color-wa-hover)] text-[var(--color-wa-text-sec)]"
-                    title="Editar"
-                  >
-                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                    </svg>
+                  <button onClick={() => startEdit(s)} className="p-1.5 rounded hover:bg-[var(--color-wa-hover)] text-[var(--color-wa-text-sec)]" title="Editar">
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
                   </button>
-                  <button
-                    onClick={() => toggleActive(s)}
-                    className="p-1.5 rounded hover:bg-[var(--color-wa-hover)] text-[var(--color-wa-text-sec)]"
-                    title={s.active ? "Desactivar" : "Activar"}
-                  >
+                  <button onClick={() => toggleActive(s)} className="p-1.5 rounded hover:bg-[var(--color-wa-hover)] text-[var(--color-wa-text-sec)]" title={s.active ? "Desactivar" : "Activar"}>
                     <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       {s.active
                         ? <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
@@ -333,14 +583,8 @@ function TabServicios() {
                       }
                     </svg>
                   </button>
-                  <button
-                    onClick={() => remove(s.id)}
-                    className="p-1.5 rounded hover:bg-[var(--color-wa-hover)] text-red-500"
-                    title="Eliminar"
-                  >
-                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                    </svg>
+                  <button onClick={() => remove(s.id)} className="p-1.5 rounded hover:bg-[var(--color-wa-hover)] text-red-500" title="Eliminar">
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
                   </button>
                 </div>
               </li>
@@ -423,7 +667,7 @@ function TabEmpleados() {
     if (exists) {
       next = current.filter((s) => s.day_of_week !== day);
     } else {
-      next = [...current, { id: 0, resource_id: resourceId, day_of_week: day, time_start: "09:00", time_end: "18:00" }];
+      next = [...current, { id: 0, resource_id: resourceId, day_of_week: day, time_start: "08:00", time_end: "22:00" }];
     }
     setAvailability((p) => ({ ...p, [resourceId]: next }));
     await fetch(`/api/settings/resources/${resourceId}`, {
@@ -453,21 +697,21 @@ function TabEmpleados() {
 
   return (
     <div className="flex flex-col gap-4">
-      <Section title="Nuevo personal">
+      <Section title="Nuevo recurso">
         <div className="flex gap-2">
           <input
             value={newName}
             onChange={(e) => setNewName(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && create()}
             className="flex-1 bg-[var(--color-wa-bg-main)] border border-[var(--color-wa-sep)] rounded-xl px-3 py-2.5 text-sm text-[var(--color-wa-text-main)] outline-none focus:border-[var(--color-wa-green)] focus:ring-2 focus:ring-[var(--color-wa-green)]/20 transition-colors"
-            placeholder="Nombre del empleado"
+            placeholder="Nombre (ej: Pileta Grande)"
           />
           <SaveButton loading={saving} onClick={create} />
         </div>
       </Section>
 
       {resources.length > 0 && (
-        <Section title={`Personal (${resources.length})`}>
+        <Section title={`Recursos (${resources.length})`}>
           <ul className="flex flex-col gap-2">
             {resources.map((r) => (
               <li key={r.id} className="border border-[var(--color-wa-sep)] rounded-lg overflow-hidden">
@@ -477,20 +721,10 @@ function TabEmpleados() {
                     {r.name}
                   </span>
                   <div className="flex items-center gap-1">
-                    <button
-                      onClick={() => toggleExpand(r.id)}
-                      className="p-1.5 rounded hover:bg-[var(--color-wa-hover)] text-[var(--color-wa-text-sec)]"
-                      title="Horarios"
-                    >
-                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                      </svg>
+                    <button onClick={() => toggleExpand(r.id)} className="p-1.5 rounded hover:bg-[var(--color-wa-hover)] text-[var(--color-wa-text-sec)]" title="Horarios">
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
                     </button>
-                    <button
-                      onClick={() => toggleActive(r)}
-                      className="p-1.5 rounded hover:bg-[var(--color-wa-hover)] text-[var(--color-wa-text-sec)]"
-                      title={r.active ? "Desactivar" : "Activar"}
-                    >
+                    <button onClick={() => toggleActive(r)} className="p-1.5 rounded hover:bg-[var(--color-wa-hover)] text-[var(--color-wa-text-sec)]" title={r.active ? "Desactivar" : "Activar"}>
                       <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         {r.active
                           ? <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
@@ -498,19 +732,12 @@ function TabEmpleados() {
                         }
                       </svg>
                     </button>
-                    <button
-                      onClick={() => remove(r.id)}
-                      className="p-1.5 rounded hover:bg-[var(--color-wa-hover)] text-red-500"
-                      title="Eliminar"
-                    >
-                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                      </svg>
+                    <button onClick={() => remove(r.id)} className="p-1.5 rounded hover:bg-[var(--color-wa-hover)] text-red-500" title="Eliminar">
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
                     </button>
                   </div>
                 </div>
 
-                {/* Horarios expandidos */}
                 {expandedId === r.id && (
                   <div className="border-t border-[var(--color-wa-sep)] px-3 py-3 bg-[var(--color-wa-bg-main)]">
                     <p className="text-sm font-medium text-[var(--color-wa-text-main)] mb-3">Días y horarios de atención</p>
@@ -528,32 +755,17 @@ function TabEmpleados() {
                             </button>
                             {active && (
                               <>
-                                <input
-                                  type="time"
-                                  value={slot.time_start}
-                                  onChange={(e) => updateTime(r.id, i, "time_start", e.target.value)}
-                                  className="bg-[var(--color-wa-panel-l)] border border-[var(--color-wa-sep)] rounded-lg px-2 py-1 text-sm text-[var(--color-wa-text-main)] outline-none focus:border-[var(--color-wa-green)] transition-colors"
-                                />
+                                <input type="time" value={slot.time_start} onChange={(e) => updateTime(r.id, i, "time_start", e.target.value)} className="bg-[var(--color-wa-panel-l)] border border-[var(--color-wa-sep)] rounded-lg px-2 py-1 text-sm text-[var(--color-wa-text-main)] outline-none focus:border-[var(--color-wa-green)] transition-colors" />
                                 <span className="text-sm text-[var(--color-wa-text-sec)]">a</span>
-                                <input
-                                  type="time"
-                                  value={slot.time_end}
-                                  onChange={(e) => updateTime(r.id, i, "time_end", e.target.value)}
-                                  className="bg-[var(--color-wa-panel-l)] border border-[var(--color-wa-sep)] rounded-lg px-2 py-1 text-sm text-[var(--color-wa-text-main)] outline-none focus:border-[var(--color-wa-green)] transition-colors"
-                                />
+                                <input type="time" value={slot.time_end} onChange={(e) => updateTime(r.id, i, "time_end", e.target.value)} className="bg-[var(--color-wa-panel-l)] border border-[var(--color-wa-sep)] rounded-lg px-2 py-1 text-sm text-[var(--color-wa-text-main)] outline-none focus:border-[var(--color-wa-green)] transition-colors" />
                               </>
                             )}
-                            {!active && (
-                              <span className="text-sm text-[var(--color-wa-text-sec)]">{DAYS_FULL[i]} — sin atención</span>
-                            )}
+                            {!active && <span className="text-sm text-[var(--color-wa-text-sec)]">{DAYS_FULL[i]} — sin atención</span>}
                           </div>
                         );
                       })}
                     </div>
-                    <button
-                      onClick={() => saveAvailability(r.id)}
-                      className="mt-3 px-5 py-2.5 bg-[var(--color-wa-green)] text-[var(--color-wa-green-text)] text-sm font-semibold rounded-xl hover:bg-[var(--color-wa-green-dark)] active:scale-95 transition-all duration-150 shadow-sm"
-                    >
+                    <button onClick={() => saveAvailability(r.id)} className="mt-3 px-5 py-2.5 bg-[var(--color-wa-green)] text-[var(--color-wa-green-text)] text-sm font-semibold rounded-xl hover:bg-[var(--color-wa-green-dark)] active:scale-95 transition-all duration-150 shadow-sm">
                       Guardar horarios
                     </button>
                   </div>
@@ -570,6 +782,24 @@ function TabEmpleados() {
 // ── Page ───────────────────────────────────────────────────────────────────────
 
 const TABS: { key: Tab; label: string; icon: React.ReactNode }[] = [
+  {
+    key: "whatsapp",
+    label: "WhatsApp",
+    icon: (
+      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M2.25 6.75c0 8.284 6.716 15 15 15h2.25a2.25 2.25 0 002.25-2.25v-1.372c0-.516-.351-.966-.852-1.091l-4.423-1.106c-.44-.11-.902.055-1.173.417l-.97 1.293c-.282.376-.769.542-1.21.38a12.035 12.035 0 01-7.143-7.143c-.162-.441.004-.928.38-1.21l1.293-.97c.363-.271.527-.734.417-1.173L6.963 3.102a1.125 1.125 0 00-1.091-.852H4.5A2.25 2.25 0 002.25 4.5v2.25z" />
+      </svg>
+    ),
+  },
+  {
+    key: "backup",
+    label: "Backup",
+    icon: (
+      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10" />
+      </svg>
+    ),
+  },
   {
     key: "apariencia",
     label: "Apariencia",
@@ -590,7 +820,7 @@ const TABS: { key: Tab; label: string; icon: React.ReactNode }[] = [
   },
   {
     key: "servicios",
-    label: "Servicios",
+    label: "Disciplinas",
     icon: (
       <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
@@ -599,17 +829,17 @@ const TABS: { key: Tab; label: string; icon: React.ReactNode }[] = [
   },
   {
     key: "empleados",
-    label: "Empleados",
+    label: "Recursos",
     icon: (
       <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" />
       </svg>
     ),
   },
 ];
 
 export default function SettingsPage() {
-  const [tab, setTab] = useState<Tab>("apariencia");
+  const [tab, setTab] = useState<Tab>("whatsapp");
 
   return (
     <div className="flex flex-col h-dvh bg-[var(--color-wa-bg-main)]">
@@ -642,7 +872,7 @@ export default function SettingsPage() {
                 <button
                   key={t.key}
                   onClick={() => setTab(t.key)}
-                  className={`flex-1 flex flex-col items-center gap-1 px-3 py-2.5 text-[10px] font-semibold whitespace-nowrap transition-all duration-150 border-b-2 ${
+                  className={`flex-shrink-0 flex flex-col items-center gap-1 px-3 py-2.5 text-[10px] font-semibold whitespace-nowrap transition-all duration-150 border-b-2 ${
                     tab === t.key
                       ? "border-[var(--color-wa-green)] text-[var(--color-wa-green)]"
                       : "border-transparent text-[var(--color-wa-text-sec)] hover:text-[var(--color-wa-text-main)]"
@@ -654,10 +884,11 @@ export default function SettingsPage() {
               ))}
             </div>
 
-            {/* Contenido */}
             <div className="flex-1 overflow-y-auto p-4 md:p-6">
               <div className="max-w-2xl mx-auto">
                 <div key={tab} className="animate-in flex flex-col gap-4">
+                  {tab === "whatsapp" && <TabWhatsApp />}
+                  {tab === "backup" && <TabBackup />}
                   {tab === "apariencia" && <TabApariencia />}
                   {tab === "negocio" && <TabNegocio />}
                   {tab === "servicios" && <TabServicios />}

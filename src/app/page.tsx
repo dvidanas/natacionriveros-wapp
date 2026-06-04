@@ -26,7 +26,7 @@ interface Conversation {
   created_at: number;
 }
 
-function Dashboard({ connectionStatus }: { connectionStatus: { status: string; phone?: string; quality?: string; message?: string } }) {
+function Dashboard({ connectionStatus }: { connectionStatus: { status: string; phone?: string | null; quality?: string; message?: string } }) {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [chatFilter, setChatFilter] = useState<ChatFilter>("todos");
   const searchParams = useSearchParams();
