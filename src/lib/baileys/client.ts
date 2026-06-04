@@ -12,18 +12,51 @@ const AUTH_DIR =
   process.env.BAILEYS_AUTH_DIR ||
   path.join(process.cwd(), "data", "baileys_auth");
 
-const logger = pino({ level: "silent" });
+const STATE_FILE = path.join(process.cwd(), "data", "baileys_conn.json");
 
-// ── Estado global ───────────────────────────────────────────
+const logger = pino({ level: "silent" });
 
 type ConnStatus = "connecting" | "qr" | "open" | "close";
 
-const state: {
+interface PersistedState {
   status: ConnStatus;
   qr: string | null;
   phone: string | null;
-  sock: WASocket | null;
-} = { status: "connecting", qr: null, phone: null, sock: null };
+  updatedAt: number;
+}
+
+// Estado en memoria (solo válido en el proceso que corre Baileys)
+const mem: { status: ConnStatus; qr: string | null; phone: string | null; sock: WASocket | null } =
+  { status: "connecting", qr: null, phone: null, sock: null };
+
+function writeState() {
+  try {
+    const data: PersistedState = {
+      status: mem.status,
+      qr: mem.qr,
+      phone: mem.phone,
+      updatedAt: Date.now(),
+    };
+    fs.mkdirSync(path.dirname(STATE_FILE), { recursive: true });
+    fs.writeFileSync(STATE_FILE, JSON.stringify(data));
+  } catch {}
+}
+
+// Leído por rutas API (pueden correr en distinto módulo en Next.js prod)
+export function getConnectionState(): { status: ConnStatus; qr: string | null; phone: string | null } {
+  try {
+    const raw = fs.readFileSync(STATE_FILE, "utf-8");
+    const data: PersistedState = JSON.parse(raw);
+    // Si el archivo tiene más de 90s de antigüedad, considerar desconectado
+    if (Date.now() - data.updatedAt > 90_000) {
+      return { status: "close", qr: null, phone: null };
+    }
+    return { status: data.status, qr: data.qr, phone: data.phone };
+  } catch {
+    // Primera vez o error de lectura: devolver estado en memoria
+    return { status: mem.status, qr: mem.qr, phone: mem.phone };
+  }
+}
 
 export type MessageHandler = (
   phone: string,
@@ -32,32 +65,27 @@ export type MessageHandler = (
   msgId: string
 ) => Promise<void>;
 
-// ── API pública ─────────────────────────────────────────────
-
-export function getConnectionState() {
-  return { status: state.status, qr: state.qr, phone: state.phone };
-}
-
 export async function sendTextMessage(
   phone: string,
   text: string
 ): Promise<{ wa_message_id: string }> {
-  if (!state.sock || state.status !== "open") {
+  if (!mem.sock || mem.status !== "open") {
     throw new Error("WhatsApp no conectado");
   }
   const jid = `${phone}@s.whatsapp.net`;
-  const result = await state.sock.sendMessage(jid, { text });
+  const result = await mem.sock.sendMessage(jid, { text });
   return { wa_message_id: result?.key?.id ?? `local-${Date.now()}` };
 }
 
 export async function logout(): Promise<void> {
-  if (state.sock) {
-    try { await state.sock.logout(); } catch { /* ignorar */ }
-    state.sock = null;
+  if (mem.sock) {
+    try { await mem.sock.logout(); } catch { /* ignorar */ }
+    mem.sock = null;
   }
-  state.status = "close";
-  state.qr = null;
-  state.phone = null;
+  mem.status = "close";
+  mem.qr = null;
+  mem.phone = null;
+  writeState();
   if (fs.existsSync(AUTH_DIR)) {
     fs.rmSync(AUTH_DIR, { recursive: true, force: true });
   }
@@ -70,7 +98,6 @@ let _started = false;
 export async function startBaileys(handler: MessageHandler): Promise<void> {
   if (_started) return;
   _started = true;
-
   await _connect(handler);
 }
 
@@ -97,40 +124,41 @@ async function _connect(handler: MessageHandler): Promise<void> {
     browser: ["Natación Riveros", "Chrome", "1.0"],
   });
 
-  state.sock = sock;
+  mem.sock = sock;
 
   sock.ev.on("creds.update", saveCreds);
 
   sock.ev.on("connection.update", async ({ connection, lastDisconnect, qr }) => {
     if (qr) {
-      state.status = "qr";
-      state.qr = qr;
+      mem.status = "qr";
+      mem.qr = qr;
+      writeState();
       console.log("[baileys] QR listo para escanear");
     }
 
     if (connection === "open") {
-      state.status = "open";
-      state.qr = null;
-      state.phone = sock.user?.id?.split(":")[0] ?? null;
-      console.log(`[baileys] Conectado → ${state.phone}`);
+      mem.status = "open";
+      mem.qr = null;
+      mem.phone = sock.user?.id?.split(":")[0] ?? null;
+      writeState();
+      console.log(`[baileys] Conectado → ${mem.phone}`);
     }
 
     if (connection === "close") {
-      state.status = "close";
-      state.qr = null;
-      state.sock = null;
+      mem.status = "close";
+      mem.qr = null;
+      mem.sock = null;
+      writeState();
       const code = (lastDisconnect?.error as { output?: { statusCode?: number } })?.output?.statusCode;
       const loggedOut = code === DisconnectReason.loggedOut;
       console.log(`[baileys] Conexión cerrada (code=${code}), loggedOut=${loggedOut}`);
 
       if (loggedOut) {
-        // Borrar auth para forzar QR en el próximo arranque
         if (fs.existsSync(AUTH_DIR)) {
           fs.rmSync(AUTH_DIR, { recursive: true, force: true });
         }
       }
 
-      // Reconectar siempre (salvo logout intencional vía API)
       _started = false;
       setTimeout(() => {
         _started = false;
@@ -147,7 +175,6 @@ async function _connect(handler: MessageHandler): Promise<void> {
     for (const msg of messages) {
       if (!msg.message || msg.key.fromMe) continue;
       const jid = msg.key.remoteJid ?? "";
-      // Ignorar grupos
       if (jid.includes("@g.us") || jid.includes("@broadcast")) continue;
 
       const text =
