@@ -933,7 +933,7 @@ export default function SettingsPage() {
             </div>
 
             <div className="flex-1 overflow-y-auto p-4 md:p-6">
-              <div className="max-w-2xl mx-auto">
+              <div className="w-full max-w-5xl mx-auto">
                 <div key={tab} className="animate-in flex flex-col gap-4">
                   {tab === "whatsapp" && <TabWhatsApp />}
                   {tab === "disciplinas" && <TabDisciplinas />}
