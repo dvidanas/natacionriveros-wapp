@@ -5,6 +5,9 @@ export async function register() {
     const { startBackupScheduler } = await import("./lib/scheduler");
 
     startBackupScheduler();
-    await startBaileys(handleIncomingMessage);
+    // No bloqueamos el arranque de Next.js — Baileys conecta en background
+    startBaileys(handleIncomingMessage).catch((e) =>
+      console.error("[instrumentation] error al iniciar Baileys:", e)
+    );
   }
 }

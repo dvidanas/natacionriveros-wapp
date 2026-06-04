@@ -78,7 +78,16 @@ async function _connect(handler: MessageHandler): Promise<void> {
   fs.mkdirSync(AUTH_DIR, { recursive: true });
 
   const { state: authState, saveCreds } = await useMultiFileAuthState(AUTH_DIR);
-  const { version } = await fetchLatestBaileysVersion();
+  let version: [number, number, number] = [2, 3000, 1023207250];
+  try {
+    const latest = await Promise.race([
+      fetchLatestBaileysVersion(),
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error("timeout")), 8000)),
+    ]);
+    version = latest.version;
+  } catch {
+    console.log("[baileys] usando versión hardcoded por timeout/error de red");
+  }
 
   const sock = makeWASocket({
     version,
